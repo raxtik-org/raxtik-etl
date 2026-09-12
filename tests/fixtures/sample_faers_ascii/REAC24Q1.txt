@@ -1,0 +1,6 @@
+PRIMARYID$CASEID$PT$DRUG_REC_ACT
+10000001$10000001$Gastrointestinal haemorrhage$
+10000001$10000001$Nausea$
+10000002$10000002$Lactic acidosis$
+10000003$10000003$Gastrointestinal haemorrhage$
+10000004$10000004$Myalgia$

@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "raxtik-etl"
+version = "0.1.0"
+description = "Adverse event ETL pipeline using dlt and DuckDB for pharmacovigilance synthetic data generation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-or-later" }
+authors = [
+    { name = "VigilForms Team" }
+]
+dependencies = [
+    "dlt[duckdb]>=1.0.0",
+    "duckdb>=1.1.0",
+    "polars>=1.0.0",
+    "pyarrow>=14.0.0",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "requests>=2.31.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+raxtik-etl = "raxtik_etl.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/raxtik_etl"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
