@@ -234,7 +234,7 @@ def test_11_fail_closed_signature_resolver():
     import io
     import zipfile
 
-    from raxtik_etl.sources.fda_ascii.signatures.resolver import detect_archive_signature
+    from raxtik_source_faers.signatures.resolver import detect_archive_signature
 
     # Create dummy archive with unrecognized header
     buf = io.BytesIO()

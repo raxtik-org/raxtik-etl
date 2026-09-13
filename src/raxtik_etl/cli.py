@@ -21,17 +21,20 @@ CACHE_DIR = Path("data/raw/archives_cache")
 
 @app.command("build-package")
 def build_package_cmd(
+    source: str = typer.Option(
+        "faers", "--source", "-s", help="Source connector name (e.g. faers)"
+    ),
     release: str = typer.Option(
         "2004Q1", "--release", "-r", help="Quarter release identifier (e.g. 2004Q1)"
     ),
     zip_path: Optional[Path] = typer.Option(
-        None, "--zip-path", "-z", help="Path to quarterly ASCII zip file"
+        None, "--zip-path", "-z", help="Path to source archive/zip file"
     ),
     output_dir: Optional[Path] = typer.Option(
         None, "--output-dir", "-o", help="Output package directory"
     ),
 ):
-    """Build a standalone, self-describing FAERS DuckDB and Parquet package."""
+    """Build a standalone, self-describing Safety DuckDB and Parquet package."""
     release_clean = release.upper()
     archive_file = zip_path or (CACHE_DIR / f"{release_clean.lower()}_ascii.zip")
 
@@ -40,7 +43,10 @@ def build_package_cmd(
         raise typer.Exit(code=1)
 
     res = build_quarterly_package(
-        release=release_clean, zip_path=archive_file, output_dir=output_dir
+        release=release_clean,
+        zip_path=archive_file,
+        source_name=source,
+        output_dir=output_dir,
     )
     console.print(
         Panel(

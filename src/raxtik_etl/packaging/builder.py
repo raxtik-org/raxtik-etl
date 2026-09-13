@@ -1,7 +1,8 @@
 """Package Builder for FAERS Quarterly Datasets.
 
 Builds standalone, self-describing `faers_YYYYQX.duckdb` and partitioned `faers_YYYYQX.parquet/`
-containing all 7 canonical tables, the deterministic `cases` view, and 5 metadata tables.
+containing all 7 canonical tables, the deterministic `cases` view, and internal metadata tables.
+Accepts any source adapter satisfying the SourceAdapter protocol via entry-point discovery.
 """
 
 from __future__ import annotations
@@ -16,7 +17,8 @@ from raxtik_etl.schema.views import (
     get_active_substances_summary_view_sql,
     get_latest_cases_view_sql,
 )
-from raxtik_etl.sources.fda_ascii.adapter import FDAAsciiAdapter
+from raxtik_etl.sources.protocol import SourceAdapter, SourceArtifact
+from raxtik_etl.sources.registry import get_source_adapter
 from raxtik_etl.transformations.metadata import populate_package_metadata
 
 console = Console()
@@ -28,6 +30,8 @@ TABLES_TO_EXPORT = ["demo", "drug", "reac", "outc", "indi", "ther", "rpsr"]
 def build_quarterly_package(
     release: str,
     zip_path: Path,
+    source_name: str = "faers",
+    adapter: Optional[SourceAdapter] = None,
     output_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Builds a standalone .duckdb and .parquet package for a specific quarterly release."""
@@ -35,26 +39,29 @@ def build_quarterly_package(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     release_clean = release.upper()
-    duckdb_path = out_dir / f"faers_{release_clean}.duckdb"
-    parquet_dir = out_dir / f"faers_{release_clean}.parquet"
+    duckdb_path = out_dir / f"{source_name}_{release_clean}.duckdb"
+    parquet_dir = out_dir / f"{source_name}_{release_clean}.parquet"
     parquet_dir.mkdir(parents=True, exist_ok=True)
 
     if duckdb_path.exists():
         duckdb_path.unlink()
 
-    console.print(f"[bold cyan]Building FAERS Package for {release_clean}...[/bold cyan]")
+    console.print(
+        f"[bold cyan]Building Safety Package [{source_name.upper()}] for {release_clean}...[/bold cyan]"
+    )
     con = duckdb.connect(duckdb_path.as_posix())
 
     try:
-        # 1. Load and normalize tables via Adapter
-        adapter = FDAAsciiAdapter(zip_path=zip_path, release=release_clean)
-        load_info = adapter.extract_and_load(con)
+        # 1. Resolve source connector and extract artifact
+        active_adapter = adapter or get_source_adapter(source_name)
+        artifact = SourceArtifact(path=zip_path, release=release_clean)
+        load_result = active_adapter.extract_and_load(con, artifact)
 
         # 2. Populate internal metadata tables and reference code tables (_metadata, _code_*, etc.)
         populate_package_metadata(
             con=con,
             release=release_clean,
-            signature_id=load_info["signature_id"],
+            signature_id=load_result.signature_id,
             source_zip_path=zip_path,
         )
 
@@ -82,7 +89,7 @@ def build_quarterly_package(
 
         return {
             "release": release_clean,
-            "signature_id": load_info["signature_id"],
+            "signature_id": load_result.signature_id,
             "duckdb_path": duckdb_path.as_posix(),
             "parquet_dir": parquet_dir.as_posix(),
             "metrics": metrics_dict,
