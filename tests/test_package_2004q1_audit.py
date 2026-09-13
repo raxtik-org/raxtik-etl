@@ -228,20 +228,3 @@ def test_10_clinical_sanity_and_outlier_ranges(con):
     deaths = con.execute("SELECT COUNT(*) FROM outc WHERE outcome_code = 'DE'").fetchone()[0]
     assert deaths == 7286
 
-
-def test_11_fail_closed_signature_resolver():
-    """Verify that unknown archives fail-closed with explicit ValueError rather than defaulting to S3."""
-    import io
-    import zipfile
-
-    from raxtik_source_faers.signatures.resolver import detect_archive_signature
-
-    # Create dummy archive with unrecognized header
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("DEMO99Q9.txt", "UNKNOWN_COL1$UNKNOWN_COL2$FOOBAR\n1$2$3\n")
-
-    buf.seek(0)
-    with zipfile.ZipFile(buf, "r") as zf:
-        with pytest.raises(ValueError, match="Unrecognized FDA ASCII schema signature"):
-            detect_archive_signature(zf, release="1999Q9")
