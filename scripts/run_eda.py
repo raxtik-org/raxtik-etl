@@ -1,10 +1,11 @@
 """Comprehensive Exploratory Data Analysis (EDA) on real FDA FAERS data."""
 
 from pathlib import Path
+
 import duckdb
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
 console = Console()
 EDA_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "eda_sample"
@@ -23,8 +24,8 @@ def run_eda():
 
     # Query nested JSON directly with DuckDB with increased maximum_object_size
     con.execute(f"""
-        CREATE OR REPLACE TABLE raw_events AS 
-        SELECT unnest(results) AS event 
+        CREATE OR REPLACE TABLE raw_events AS
+        SELECT unnest(results) AS event
         FROM read_json_auto('{sample_path.as_posix()}', maximum_object_size=500000000);
     """)
 
@@ -33,7 +34,7 @@ def run_eda():
 
     # 1. Demographics Profiling
     stats = con.execute("""
-        SELECT 
+        SELECT
             COUNT(*) AS total_cases,
             COUNT(CASE WHEN event.patient.patientonsetage IS NULL THEN 1 END) AS missing_age,
             COUNT(CASE WHEN event.patient.patientsex IS NULL THEN 1 END) AS missing_sex,
@@ -61,7 +62,7 @@ def run_eda():
     # 2. Top 15 Most Frequently Reported Drugs
     console.print("\n[bold yellow]2. Top 15 Reported Drugs[/bold yellow]")
     top_drugs = con.execute("""
-        SELECT 
+        SELECT
             UPPER(TRIM(drug.medicinalproduct)) AS drug_name,
             COUNT(*) AS report_count,
             COUNT(DISTINCT event.safetyreportid) AS unique_cases
@@ -84,7 +85,7 @@ def run_eda():
     # 3. Top 15 Adverse Reactions (MedDRA Preferred Terms)
     console.print("\n[bold yellow]3. Top 15 Adverse Reactions (MedDRA PTs)[/bold yellow]")
     top_reactions = con.execute("""
-        SELECT 
+        SELECT
             UPPER(TRIM(reac.reactionmeddrapt)) AS reaction_pt,
             COUNT(*) AS frequency,
             ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM raw_events), 2) AS pct_of_all_reports
@@ -107,7 +108,7 @@ def run_eda():
     # 4. Top Indications
     console.print("\n[bold yellow]4. Top 10 Reported Indications / Diagnoses[/bold yellow]")
     top_indications = con.execute("""
-        SELECT 
+        SELECT
             UPPER(TRIM(drug.drugindication)) AS indication_pt,
             COUNT(*) AS count
         FROM raw_events,

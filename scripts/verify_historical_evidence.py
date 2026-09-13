@@ -13,22 +13,19 @@ Outputs:
 
 from __future__ import annotations
 
-import csv
 import hashlib
 import io
 import json
 import re
-import sys
 import zipfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import requests
 from rich.console import Console
 from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TimeRemainingColumn
-from rich.table import Table
 
 console = Console()
 

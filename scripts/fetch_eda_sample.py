@@ -1,7 +1,8 @@
 """Download and extract a real FDA FAERS sample partition for EDA."""
 
-from pathlib import Path
 import zipfile
+from pathlib import Path
+
 import requests
 from tqdm import tqdm
 
