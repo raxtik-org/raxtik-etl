@@ -33,26 +33,25 @@ The `raxtik_etl.FAERS` client provides zero-copy query execution returning [Pola
 ```python
 from raxtik_etl import FAERS
 
-# 1. Connect to the versioned 2004Q1 package
-faers = FAERS("2004Q1")
+# 1. Connect to the versioned 2004Q1 package (context manager recommended)
+with FAERS("2004Q1") as faers:
+    # 2. Print self-describing metadata & data quality report
+    faers.print_summary()
 
-# 2. Print self-describing metadata & data quality report
-faers.print_summary()
+    # 3. Retrieve resolved patient cases (deterministic latest caseversion)
+    cases_df = faers.cases(limit=1000)
+    print(cases_df.select([
+        "case_id",
+        "primary_id",
+        "canonical_case_version",
+        "standard_age_years",
+        "standard_sex_label",
+        "event_date",
+    ]))
 
-# 3. Retrieve resolved patient cases (deterministic latest caseversion)
-cases_df = faers.cases(limit=1000)
-print(cases_df.select([
-    "case_id",
-    "primary_id",
-    "canonical_case_version",
-    "standard_age_years",
-    "standard_sex_label",
-    "event_date",
-]))
-
-# 4. Query drugs and adverse reactions
-drugs_df = faers.drugs(limit=500)
-reacs_df = faers.reactions(limit=500)
+    # 4. Query drugs and adverse reactions
+    drugs_df = faers.drugs(limit=500)
+    reacs_df = faers.reactions(limit=500)
 ```
 
 ---
@@ -136,9 +135,9 @@ Fact tables (`demo`, `drug`, `reac`, `outc`, `rpsr`) store raw reported codes. T
 
 ## 🛠 Rebuilding or Verifying the Package
 
-To rebuild the package from source:
+To rebuild the package from source using the decoupled `faers` plugin:
 ```bash
-uv run raxtik-etl build-package --release 2004Q1
+uv run raxtik-etl build-package --source faers --release 2004Q1
 ```
 
 To run the full contract and correctness audit suite:
