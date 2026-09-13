@@ -1,0 +1,67 @@
+table,canonical_field,datatype,category,signature_s1_2004_2012q3,signature_s2_2012q4_2014q2,signature_s3_2014q3_2025q4,signature_s4_2026_present,description
+demo,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Submission report identifier
+demo,case_id,VARCHAR,H,CASE,CASEID,CASEID,CASEID,Case identifier across revisions
+demo,fda_case_version,INTEGER,H,NULL,CASEVERSION,CASEVERSION,CASEVERSION,FDA-reported version number (or NULL in legacy AERS)
+demo,canonical_case_version,INTEGER,G,DERIVED,DERIVED,DERIVED,DERIVED,Raxtik analytical case version ordinal
+demo,foll_seq,VARCHAR,A,FOLL_SEQ,FOLL_SEQ,NULL,NULL,Legacy follow-up sequence number
+demo,initial_or_followup_code,VARCHAR,A,I_F_COD,I_F_COD,I_F_COD,I_F_COD,Report type (I=Initial F=Followup)
+demo,event_date,VARCHAR,A,EVENT_DT,EVENT_DT,EVENT_DT,EVENT_DT,Date adverse event occurred (YYYYMMDD)
+demo,manufacturer_date,VARCHAR,A,MFR_DT,MFR_DT,MFR_DT,MFR_DT,Date manufacturer received report (YYYYMMDD)
+demo,initial_fda_date,VARCHAR,C,NULL,INIT_FDA_DT,INIT_FDA_DT,INIT_FDA_DT,Date initial report received by FDA (YYYYMMDD)
+demo,fda_date,VARCHAR,A,FDA_DT,FDA_DT,FDA_DT,FDA_DT,Date FDA received this report version (YYYYMMDD)
+demo,report_date,VARCHAR,A,REPT_DT,REPT_DT,REPT_DT,REPT_DT,Date report was created (YYYYMMDD)
+demo,electronic_submission_flag,VARCHAR,A,E_SUB,E_SUB,E_SUB,E_SUB,Electronic submission flag (Y/N)
+demo,manufacturer_num,VARCHAR,A,MFR_NUM,MFR_NUM,MFR_NUM,MFR_NUM,Manufacturer unique tracking number
+demo,manufacturer_sender,VARCHAR,A,MFR_SNDR,MFR_SNDR,MFR_SNDR,MFR_SNDR,Manufacturer sender company name
+demo,reported_age,DOUBLE,A,AGE,AGE,AGE,AGE,Reported patient age number
+demo,reported_age_code,VARCHAR,A,AGE_COD,AGE_COD,AGE_COD,AGE_COD,Unit of age (YR MON WK DY HR DEC)
+demo,reported_age_group_code,VARCHAR,C,NULL,NULL,AGE_GRP,AGE_GRP,Age group category (Introduced 2014Q3)
+demo,reported_sex_code,VARCHAR,B,GNDR_COD,GNDR_COD,SEX,SEX,Reported patient sex (Header modified to SEX in 2014Q3)
+demo,reported_weight,DOUBLE,A,WT,WT,WT,WT,Reported patient weight number
+demo,reported_weight_code,VARCHAR,A,WT_COD,WT_COD,WT_COD,WT_COD,Unit of weight (KG LBS GMS)
+demo,reporter_occupation_code,VARCHAR,A,OCCP_COD,OCCP_COD,OCCP_COD,OCCP_COD,Reporter occupation code (MD PH OT LW CN)
+demo,auth_num,VARCHAR,C,NULL,NULL,AUTH_NUM,AUTH_NUM,Regulatory authorization number (Introduced 2014Q3)
+demo,lit_ref,VARCHAR,C,NULL,NULL,LIT_REF,LIT_REF,Literature reference text (Introduced 2014Q3)
+demo,reporter_country,VARCHAR,C,NULL,NULL,REPORTER_COUNTRY,REPORTER_COUNTRY,Reporter country code (Subject to verification)
+demo,occurrence_country,VARCHAR,C,NULL,NULL,OCCR_COUNTRY,OCCR_COUNTRY,Adverse event occurrence country code
+drug,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
+drug,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
+drug,drug_seq,INTEGER,A,DRUG_SEQ,DRUG_SEQ,DRUG_SEQ,DRUG_SEQ,Sequence number of drug in report (1 2 3...)
+drug,role_code,VARCHAR,E,ROLE_COD,ROLE_COD,ROLE_COD,ROLE_COD,Suspect role of drug (Preserves reported code)
+drug,reported_drug_name,VARCHAR,A,DRUGNAME,DRUGNAME,DRUGNAME,DRUGNAME,Immutable reported verbatim drug name
+drug,reported_active_ingredient,VARCHAR,C,NULL,NULL,PROD_AI,PROD_AI,Active ingredient text (Introduced 2014Q3)
+drug,reported_validation_code,VARCHAR,A,VAL_VBM,VAL_VBM,VAL_VBM,VAL_VBM,Drug validation flag (1=validated 2=non-validated)
+drug,route,VARCHAR,A,ROUTE,ROUTE,ROUTE,ROUTE,Administration route (Oral IV etc)
+drug,reported_dose_verbatim,VARCHAR,A,DOSE_VBM,DOSE_VBM,DOSE_VBM,DOSE_VBM,Verbatim prescribed dosage text
+drug,dose_amount,DOUBLE,F,NULL,DOSE_AMT,DOSE_AMT,DOSE_AMT,Numerical dose amount (value_origin=FDA_REPORTED)
+drug,dose_unit,VARCHAR,F,NULL,DOSE_UNIT,DOSE_UNIT,DOSE_UNIT,Dose measurement unit (value_origin=FDA_REPORTED)
+drug,dose_form,VARCHAR,F,NULL,DOSE_FORM,DOSE_FORM,DOSE_FORM,Physical form (value_origin=FDA_REPORTED)
+drug,dose_frequency,VARCHAR,F,NULL,DOSE_FREQ,DOSE_FREQ,DOSE_FREQ,Dosing frequency (value_origin=FDA_REPORTED)
+drug,cumulative_dose_amount,DOUBLE,A,CUM_DOSE_CHR,CUM_DOSE_CHR,CUM_DOSE_CHR,CUM_DOSE_CHR,Cumulative dose taken before event
+drug,cumulative_dose_unit,VARCHAR,A,CUM_DOSE_UNIT,CUM_DOSE_UNIT,CUM_DOSE_UNIT,CUM_DOSE_UNIT,Cumulative dose unit
+drug,dechallenge_code,VARCHAR,A,DECHAL,DECHAL,DECHAL,DECHAL,Positive/negative dechallenge flag
+drug,rechallenge_code,VARCHAR,A,RECHAL,RECHAL,RECHAL,RECHAL,Positive/negative rechallenge flag
+drug,lot_number,VARCHAR,A,LOT_NUM,LOT_NUM,LOT_NUM,LOT_NUM,Manufacturer lot batch number
+drug,expiration_date,VARCHAR,A,EXP_DT,EXP_DT,EXP_DT,EXP_DT,Product expiration date (YYYYMMDD)
+drug,nda_num,VARCHAR,A,NDA_NUM,NDA_NUM,NDA_NUM,NDA_NUM,FDA application number
+reac,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
+reac,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
+reac,reported_reaction_term,VARCHAR,A,PT,PT,PT,PT,MedDRA Preferred Term adverse reaction
+reac,drug_reaction_action,VARCHAR,C,NULL,NULL,DRUG_REC_ACT,DRUG_REC_ACT,Action taken with drug (Introduced 2014Q3)
+outc,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
+outc,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
+outc,outcome_code,VARCHAR,A,OUTC_COD,OUTC_COD,OUTC_COD,OUTC_COD,Coded outcome / seriousness (DE LT HO DS CA RI OT)
+indi,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
+indi,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
+indi,indication_drug_seq,INTEGER,H,DRUG_SEQ,INDI_DRUG_SEQ,INDI_DRUG_SEQ,INDI_DRUG_SEQ,Links to DRUG.drug_seq
+indi,reported_indication_term,VARCHAR,A,INDI_PT,INDI_PT,INDI_PT,INDI_PT,MedDRA Preferred Term indication
+ther,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
+ther,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
+ther,therapy_drug_seq,INTEGER,H,DRUG_SEQ,DSG_DRUG_SEQ,DSG_DRUG_SEQ,DSG_DRUG_SEQ,Links to DRUG.drug_seq
+ther,start_date,VARCHAR,A,START_DT,START_DT,START_DT,START_DT,Therapy start date (YYYYMMDD)
+ther,end_date,VARCHAR,A,END_DT,END_DT,END_DT,END_DT,Therapy end date (YYYYMMDD)
+ther,reported_duration,DOUBLE,A,DUR,DUR,DUR,DUR,Reported duration of therapy number
+ther,reported_duration_code,VARCHAR,A,DUR_COD,DUR_COD,DUR_COD,DUR_COD,Unit of duration (YR MON WK DY HR)
+rpsr,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
+rpsr,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
+rpsr,report_source_code,VARCHAR,A,RPSR_COD,RPSR_COD,RPSR_COD,RPSR_COD,Report source category code (FGN SDY LIT HP CSM CR UF)

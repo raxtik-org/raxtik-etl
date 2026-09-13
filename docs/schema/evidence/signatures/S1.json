@@ -1,0 +1,108 @@
+{
+  "signature_id": "S1",
+  "signature_sha256": "2202d728e518b7a0d2fde97cbaf404431db62f8931406fbbd4db02e771fd0c0d",
+  "representative_release": "2004Q1",
+  "matching_releases": [
+    "2004Q1"
+  ],
+  "tables": {
+    "DEMO": {
+      "columns": [
+        "ISR",
+        "CASE",
+        "I_F_COD",
+        "FOLL_SEQ",
+        "IMAGE",
+        "EVENT_DT",
+        "MFR_DT",
+        "FDA_DT",
+        "REPT_COD",
+        "MFR_NUM",
+        "MFR_SNDR",
+        "AGE",
+        "AGE_COD",
+        "GNDR_COD",
+        "E_SUB",
+        "WT",
+        "WT_COD",
+        "REPT_DT",
+        "OCCP_COD",
+        "DEATH_DT",
+        "TO_MFR",
+        "CONFID"
+      ],
+      "column_count": 22,
+      "delimiter": "$",
+      "table_signature_sha256": "7dc54b43c189f70c2a717c3b07f2fd23006f5ce6a281c9206283af41f02ee154"
+    },
+    "DRUG": {
+      "columns": [
+        "ISR",
+        "DRUG_SEQ",
+        "ROLE_COD",
+        "DRUGNAME",
+        "VAL_VBM",
+        "ROUTE",
+        "DOSE_VBM",
+        "DECHAL",
+        "RECHAL",
+        "LOT_NUM",
+        "EXP_DT",
+        "NDA_NUM"
+      ],
+      "column_count": 12,
+      "delimiter": "$",
+      "table_signature_sha256": "3abfd8b3edd093167c054bbedc8abab0c4fae640b0181229ea0875c82c4f6d67"
+    },
+    "REAC": {
+      "columns": [
+        "ISR",
+        "PT"
+      ],
+      "column_count": 2,
+      "delimiter": "$",
+      "table_signature_sha256": "f47a1e9058000d1354534a66966951901c9576f295cbf76ed76db421898e8879"
+    },
+    "OUTC": {
+      "columns": [
+        "ISR",
+        "OUTC_COD"
+      ],
+      "column_count": 2,
+      "delimiter": "$",
+      "table_signature_sha256": "7605203bebd1b6008793cf70980d25843772316efe94c30b52118d878a465471"
+    },
+    "RPSR": {
+      "columns": [
+        "ISR",
+        "RPSR_COD"
+      ],
+      "column_count": 2,
+      "delimiter": "$",
+      "table_signature_sha256": "6af71fcdec0753a27399f24d7e3d4b5892f739603efc7a8c42f7ac6d33cd42a3"
+    },
+    "THER": {
+      "columns": [
+        "ISR",
+        "DRUG_SEQ",
+        "START_DT",
+        "END_DT",
+        "DUR",
+        "DUR_COD"
+      ],
+      "column_count": 6,
+      "delimiter": "$",
+      "table_signature_sha256": "25b0dfd1a3894af482c12b21ef8c7053c609ae16997d85f587d2b4d5fc5319ce"
+    },
+    "INDI": {
+      "columns": [
+        "ISR",
+        "DRUG_SEQ",
+        "INDI_PT"
+      ],
+      "column_count": 3,
+      "delimiter": "$",
+      "table_signature_sha256": "d536db2f06961babbca4e7374fe0b11b6be2ad663634d86d75553c937f6cefcd"
+    }
+  }
+}

@@ -41,6 +41,8 @@ data/intermediate/*
 !data/intermediate/.gitkeep
 data/output/*
 !data/output/.gitkeep
+data/packages/*
+!data/packages/.gitkeep
 *.duckdb
 *.duckdb.wal
 

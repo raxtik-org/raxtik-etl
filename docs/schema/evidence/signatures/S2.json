@@ -1,0 +1,120 @@
+{
+  "signature_id": "S2",
+  "signature_sha256": "1c04438534eb727e78781a06de06b1600ec9f0fc3d721287e402e8c272aa3aa5",
+  "representative_release": "2012Q4",
+  "matching_releases": [
+    "2012Q4"
+  ],
+  "tables": {
+    "DEMO": {
+      "columns": [
+        "primaryid",
+        "caseid",
+        "caseversion",
+        "i_f_code",
+        "event_dt",
+        "mfr_dt",
+        "init_fda_dt",
+        "fda_dt",
+        "rept_cod",
+        "mfr_num",
+        "mfr_sndr",
+        "age",
+        "age_cod",
+        "gndr_cod",
+        "e_sub",
+        "wt",
+        "wt_cod",
+        "rept_dt",
+        "to_mfr",
+        "occp_cod",
+        "reporter_country",
+        "occr_country"
+      ],
+      "column_count": 22,
+      "delimiter": "$",
+      "table_signature_sha256": "0e4e6daf5323bc1c60b0d3bfc32373ccbc1d5a47051731017c26b30dc01c34d8"
+    },
+    "DRUG": {
+      "columns": [
+        "primaryid",
+        "caseid",
+        "drug_seq",
+        "role_cod",
+        "drugname",
+        "val_vbm",
+        "route",
+        "dose_vbm",
+        "cum_dose_chr",
+        "cum_dose_unit",
+        "dechal",
+        "rechal",
+        "lot_nbr",
+        "exp_dt",
+        "nda_num",
+        "dose_amt",
+        "dose_unit",
+        "dose_form",
+        "dose_freq"
+      ],
+      "column_count": 19,
+      "delimiter": "$",
+      "table_signature_sha256": "bd81fd298952441fa1fc1101fd59180e49c14238a3ccefa3fb12cdf0bc9b68ca"
+    },
+    "REAC": {
+      "columns": [
+        "primaryid",
+        "caseid",
+        "pt"
+      ],
+      "column_count": 3,
+      "delimiter": "$",
+      "table_signature_sha256": "d5626c5236ce620f16285c1f3c7067b598d443ea7576f04b80effc3e2e633a94"
+    },
+    "OUTC": {
+      "columns": [
+        "primaryid",
+        "caseid",
+        "outc_code"
+      ],
+      "column_count": 3,
+      "delimiter": "$",
+      "table_signature_sha256": "85a7a9ac82c725c44274582cb0df31a2226ef9e2577c2fb032d492e774f87818"
+    },
+    "RPSR": {
+      "columns": [
+        "primaryid",
+        "caseid",
+        "rpsr_cod"
+      ],
+      "column_count": 3,
+      "delimiter": "$",
+      "table_signature_sha256": "6bcb44481dc29a0e53baebc54dfb1fd4910e25cd396dc714c1b0e8167ac0f1e9"
+    },
+    "THER": {
+      "columns": [
+        "primaryid",
+        "caseid",
+        "dsg_drug_seq",
+        "start_dt",
+        "end_dt",
+        "dur",
+        "dur_cod"
+      ],
+      "column_count": 7,
+      "delimiter": "$",
+      "table_signature_sha256": "3387a87b0525739035157da56877283daab0ec26f822763a2f3a647e964ed420"
+    },
+    "INDI": {
+      "columns": [
+        "primaryid",
+        "caseid",
+        "indi_drug_seq",
+        "indi_pt"
+      ],
+      "column_count": 4,
+      "delimiter": "$",
+      "table_signature_sha256": "4596d75223407fc58d343ce6de43a2f68bafb14fb0d73d0b0029b7fa4f73977f"
+    }
+  }
+}
