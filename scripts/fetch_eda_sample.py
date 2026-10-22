@@ -26,13 +26,16 @@ def fetch_eda_sample():
     response.raise_for_status()
 
     total_size = int(response.headers.get("content-length", 0))
-    with open(zip_target, "wb") as f, tqdm(
-        desc="Downloading 2004 Q3 sample",
-        total=total_size,
-        unit="iB",
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
+    with (
+        open(zip_target, "wb") as f,
+        tqdm(
+            desc="Downloading 2004 Q3 sample",
+            total=total_size,
+            unit="iB",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as bar,
+    ):
         for chunk in response.iter_content(chunk_size=1024 * 1024):
             size = f.write(chunk)
             bar.update(size)
@@ -45,7 +48,7 @@ def fetch_eda_sample():
         zip_target.unlink()
 
     extracted = list(EDA_DIR.glob("*.json"))[0]
-    print(f"Extracted sample file: {extracted} ({extracted.stat().st_size / (1024*1024):.2f} MB)")
+    print(f"Extracted sample file: {extracted} ({extracted.stat().st_size / (1024 * 1024):.2f} MB)")
     return extracted
 
 

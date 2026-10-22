@@ -40,14 +40,18 @@ with FAERS("2004Q1") as faers:
 
     # 3. Retrieve resolved patient cases (deterministic latest caseversion)
     cases_df = faers.cases(limit=1000)
-    print(cases_df.select([
-        "case_id",
-        "primary_id",
-        "canonical_case_version",
-        "standard_age_years",
-        "standard_sex_label",
-        "event_date",
-    ]))
+    print(
+        cases_df.select(
+            [
+                "case_id",
+                "primary_id",
+                "canonical_case_version",
+                "standard_age_years",
+                "standard_sex_label",
+                "event_date",
+            ]
+        )
+    )
 
     # 4. Query drugs and adverse reactions
     drugs_df = faers.drugs(limit=500)
@@ -67,7 +71,7 @@ import duckdb
 con = duckdb.connect("data/packages/faers_2004Q1.duckdb", read_only=True)
 
 patient_profile_sql = """
-SELECT 
+SELECT
     c.case_id,
     c.standard_age_years,
     c.standard_sex_label,
@@ -83,15 +87,15 @@ SELECT
     sem.is_serious,
     sem.ich_seriousness_category
 FROM cases c
-JOIN drug d 
+JOIN drug d
     ON c.primary_id = d.primary_id AND d.role_code = 'PS'
-JOIN reac r 
+JOIN reac r
     ON c.primary_id = r.primary_id
-LEFT JOIN outc o 
+LEFT JOIN outc o
     ON c.primary_id = o.primary_id
-LEFT JOIN _code_outcomes co 
+LEFT JOIN _code_outcomes co
     ON o.outcome_code = co.outcome_code
-LEFT JOIN _code_outcome_semantics sem 
+LEFT JOIN _code_outcome_semantics sem
     ON o.outcome_code = sem.outcome_code
 WHERE c.standard_age_years IS NOT NULL
 LIMIT 50000;
@@ -105,7 +109,7 @@ print(df_patients.head(10))
 The package comes pre-built with the analytical view `case_adverse_events_summary`:
 ```python
 df_summary = con.execute("""
-    SELECT * 
+    SELECT *
     FROM case_adverse_events_summary
     WHERE primary_suspect_drug = 'FORTEO'
     LIMIT 100;

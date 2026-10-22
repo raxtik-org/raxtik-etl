@@ -29,8 +29,14 @@ ENV/
 # Testing & Linting
 .pytest_cache/
 .coverage
+coverage.xml
+*.xml
 htmlcov/
 .ruff_cache/
+.tox/
+
+# Documentation
+docs/_build/
 
 # dlt & local pipeline data
 .dlt/secrets.toml
@@ -49,6 +55,7 @@ data/packages/*
 # IDE
 .idea/
 .vscode/
+*.code-workspace
 *.swp
 *.swo
 .DS_Store

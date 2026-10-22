@@ -1,0 +1,46 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate configuration for raxtik-etl",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":combineUpdateAutomations"
+  ],
+  "labels": ["dependencies"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "UTC",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "auto",
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["*"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch"
+    },
+    {
+      "description": "Pin GitHub Actions to full commit SHAs for security and immutability",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "pinDigests": true
+    },
+    {
+      "description": "Group pre-commit hook updates",
+      "matchManagers": ["pre-commit"],
+      "groupName": "pre-commit hooks"
+    },
+    {
+      "description": "Prevent bumping required Python version automatically",
+      "matchPackageNames": ["python"],
+      "enabled": false
+    }
+  ],
+  "enabledManagers": [
+    "pep621",
+    "pip_requirements",
+    "github-actions",
+    "pre-commit"
+  ]
+}

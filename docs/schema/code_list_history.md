@@ -1,6 +1,6 @@
 # FAERS/AEMS Coded Values & Code-List History Reference
 
-> **Status**: 🟡 **Phase 0 Substantially Complete — Evidence Lock Pending**  
+> **Status**: 🟡 **Phase 0 Substantially Complete — Evidence Lock Pending**
 > *Note*: Code lists documented below reflect FDA CDER / ICH guidelines. The platform preserves the raw reported code and attaches the applicable canonical label based on verified schema signatures.
 
 ---
@@ -47,12 +47,12 @@
 
 | Reported Code | Unit | Conversion to `standard_age_years` |
 | :--- | :--- | :--- |
-| `YR` | Years | $\text{age} \times 1.0$ |
-| `DEC`| Decades | $\text{age} \times 10.0$ |
-| `MON`| Months | $\text{age} / 12.0$ |
-| `WK` | Weeks | $\text{age} / 52.1429$ |
-| `DY` | Days | $\text{age} / 365.25$ |
-| `HR` | Hours | $\text{age} / 8766.0$ |
+| `YR` | Years | `age * 1.0` |
+| `DEC`| Decades | `age * 10.0` |
+| `MON`| Months | `age / 12.0` |
+| `WK` | Weeks | `age / 52.1429` |
+| `DY` | Days | `age / 365.25` |
+| `HR` | Hours | `age / 8766.0` |
 
 ---
 
@@ -60,9 +60,9 @@
 
 | Reported Code | Unit | Conversion to `standard_weight_kg` |
 | :--- | :--- | :--- |
-| `KG` | Kilograms | $\text{wt} \times 1.0$ |
-| `LBS`| Pounds | $\text{wt} \times 0.45359237$ |
-| `GMS`| Grams | $\text{wt} / 1000.0$ |
+| `KG` | Kilograms | `wt * 1.0` |
+| `LBS`| Pounds | `wt * 0.45359237` |
+| `GMS`| Grams | `wt / 1000.0` |
 
 ---
 

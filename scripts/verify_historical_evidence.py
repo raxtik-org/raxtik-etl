@@ -99,7 +99,9 @@ def detect_delimiter(sample_bytes: bytes) -> str:
     return "$"
 
 
-def analyze_table_file(zf: zipfile.ZipFile, zip_info: zipfile.ZipInfo, table_type: str) -> TableEvidence:
+def analyze_table_file(
+    zf: zipfile.ZipFile, zip_info: zipfile.ZipInfo, table_type: str
+) -> TableEvidence:
     with zf.open(zip_info) as f:
         # Read first 16KB to get header and first couple data rows
         sample_bytes = f.read(32768)
@@ -125,7 +127,9 @@ def analyze_table_file(zf: zipfile.ZipFile, zip_info: zipfile.ZipInfo, table_typ
     column_count = len(columns)
 
     first_data_row_raw = lines[1] if len(lines) > 1 else ""
-    first_data_row_fields = [f.strip() for f in first_data_row_raw.split(delimiter)] if first_data_row_raw else []
+    first_data_row_fields = (
+        [f.strip() for f in first_data_row_raw.split(delimiter)] if first_data_row_raw else []
+    )
     first_data_row_field_count = len(first_data_row_fields)
 
     # Check match (handle trailing delimiter quirks)
@@ -147,7 +151,8 @@ def analyze_table_file(zf: zipfile.ZipFile, zip_info: zipfile.ZipInfo, table_typ
         header_raw=header_raw,
         columns=columns,
         column_count=column_count,
-        first_data_row_raw=first_data_row_raw[:200] + ("..." if len(first_data_row_raw) > 200 else ""),
+        first_data_row_raw=first_data_row_raw[:200]
+        + ("..." if len(first_data_row_raw) > 200 else ""),
         first_data_row_field_count=first_data_row_field_count,
         field_count_matches_header=field_count_matches,
         table_signature_sha256=table_sig_sha256,
@@ -211,7 +216,8 @@ def process_release(release_info: Dict[str, str]) -> Optional[ReleaseEvidence]:
         for prefix in TABLE_PREFIXES:
             # Find matching text file (e.g. DEMO04Q1.txt or ascii/DEMO24Q1.txt)
             matching_files = [
-                f for f in file_list
+                f
+                for f in file_list
                 if re.search(rf"(?:^|[/\\]){prefix}[^/\\]*\.txt$", f.filename, re.IGNORECASE)
             ]
             if not matching_files:
@@ -223,7 +229,9 @@ def process_release(release_info: Dict[str, str]) -> Optional[ReleaseEvidence]:
             tables_evidence[prefix] = evidence
 
     # Calculate overall Release Signature Hash
-    combined_sigs = "".join(tables_evidence[p].table_signature_sha256 for p in TABLE_PREFIXES if p in tables_evidence)
+    combined_sigs = "".join(
+        tables_evidence[p].table_signature_sha256 for p in TABLE_PREFIXES if p in tables_evidence
+    )
     release_sig_sha256 = hashlib.sha256(combined_sigs.encode("utf-8")).hexdigest()
 
     release_evidence = ReleaseEvidence(
@@ -242,7 +250,9 @@ def process_release(release_info: Dict[str, str]) -> Optional[ReleaseEvidence]:
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(asdict(release_evidence), f, indent=2)
 
-    console.print(f"[green]Saved evidence record:[/green] {out_json.name} (Release Sig: [bold]{release_sig_sha256[:12]}[/bold])")
+    console.print(
+        f"[green]Saved evidence record:[/green] {out_json.name} (Release Sig: [bold]{release_sig_sha256[:12]}[/bold])"
+    )
     return release_evidence
 
 
@@ -273,12 +283,16 @@ def generate_comparison_and_signatures(all_evidence: List[ReleaseEvidence]):
             "tables": {
                 p: {
                     "columns": ev_list[0].tables[p].columns if p in ev_list[0].tables else [],
-                    "column_count": ev_list[0].tables[p].column_count if p in ev_list[0].tables else 0,
+                    "column_count": ev_list[0].tables[p].column_count
+                    if p in ev_list[0].tables
+                    else 0,
                     "delimiter": ev_list[0].tables[p].delimiter if p in ev_list[0].tables else "$",
-                    "table_signature_sha256": ev_list[0].tables[p].table_signature_sha256 if p in ev_list[0].tables else "",
+                    "table_signature_sha256": ev_list[0].tables[p].table_signature_sha256
+                    if p in ev_list[0].tables
+                    else "",
                 }
                 for p in TABLE_PREFIXES
-            }
+            },
         }
         with open(SIGNATURES_DIR / f"{sig_id}.json", "w", encoding="utf-8") as f:
             json.dump(sig_record, f, indent=2)
@@ -288,12 +302,16 @@ def generate_comparison_and_signatures(all_evidence: List[ReleaseEvidence]):
     md.write("# Phase 0 Empirical Schema Fingerprint Comparison Report\n\n")
     md.write(f"> **Generated at**: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%SZ')}\n\n")
     md.write("## 1. Verified Release Signatures & Fingerprints\n\n")
-    md.write("| Release | Signature ID | Release Signature Hash (SHA-256) | Archive Size (MB) | Verified Archive SHA-256 |\n")
+    md.write(
+        "| Release | Signature ID | Release Signature Hash (SHA-256) | Archive Size (MB) | Verified Archive SHA-256 |\n"
+    )
     md.write("| :--- | :--- | :--- | :--- | :--- |\n")
     for ev in all_evidence:
         sig_id = sig_id_map.get(ev.release_signature_sha256, "Unknown")
         size_mb = ev.zip_byte_size / (1024 * 1024)
-        md.write(f"| **{ev.release}** | `{sig_id}` | `{ev.release_signature_sha256[:16]}...` | {size_mb:.2f} MB | `{ev.archive_sha256[:16]}...` |\n")
+        md.write(
+            f"| **{ev.release}** | `{sig_id}` | `{ev.release_signature_sha256[:16]}...` | {size_mb:.2f} MB | `{ev.archive_sha256[:16]}...` |\n"
+        )
 
     md.write("\n---\n\n")
     md.write("## 2. Table-by-Table Column Evolution\n\n")
@@ -307,7 +325,10 @@ def generate_comparison_and_signatures(all_evidence: List[ReleaseEvidence]):
             if prefix in rep.tables:
                 sig_columns[sig_id] = rep.tables[prefix].columns
 
-        headers = ["#"] + [f"{sig_id} ({signatures_map[sig_hash][0].release})" for sig_hash, sig_id in sig_id_map.items()]
+        headers = ["#"] + [
+            f"{sig_id} ({signatures_map[sig_hash][0].release})"
+            for sig_hash, sig_id in sig_id_map.items()
+        ]
         md.write("| " + " | ".join(headers) + " |\n")
         md.write("| " + " | ".join([":---"] + [":---" for _ in range(len(sig_id_map))]) + " |\n")
 
@@ -324,7 +345,9 @@ def generate_comparison_and_signatures(all_evidence: List[ReleaseEvidence]):
     with open(EVIDENCE_DIR / "comparison.md", "w", encoding="utf-8") as f:
         f.write(md.getvalue())
 
-    console.print(f"[bold green]Successfully generated comparison report:[/bold green] {EVIDENCE_DIR / 'comparison.md'}")
+    console.print(
+        f"[bold green]Successfully generated comparison report:[/bold green] {EVIDENCE_DIR / 'comparison.md'}"
+    )
 
 
 def main():

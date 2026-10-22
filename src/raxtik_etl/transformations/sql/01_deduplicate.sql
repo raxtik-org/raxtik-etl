@@ -2,7 +2,7 @@
 
 CREATE OR REPLACE TABLE dedup_demo AS
 WITH ranked AS (
-    SELECT 
+    SELECT
         primaryid,
         caseid,
         caseversion,
@@ -24,18 +24,18 @@ WITH ranked AS (
         occr_country,
         ROW_NUMBER() OVER (
             PARTITION BY COALESCE(caseid, primaryid)
-            ORDER BY 
+            ORDER BY
                 TRY_CAST(caseversion AS INTEGER) DESC NULLS LAST,
                 TRY_CAST(fda_dt AS BIGINT) DESC NULLS LAST,
                 primaryid DESC
         ) AS rnk
     FROM demo
 )
-SELECT 
+SELECT
     primaryid,
     COALESCE(caseid, primaryid) AS caseid,
     caseversion,
-    CASE 
+    CASE
         WHEN age_cod IN ('YR', 'YEAR', 'YEARS') THEN raw_age
         WHEN age_cod IN ('MON', 'MONTH', 'MONTHS') THEN raw_age / 12.0
         WHEN age_cod IN ('WK', 'WEEK', 'WEEKS') THEN raw_age / 52.0
@@ -44,7 +44,7 @@ SELECT
         WHEN age_cod IN ('DEC', 'DECADE', 'DECADES') THEN raw_age * 10.0
         ELSE raw_age
     END AS age_years,
-    CASE 
+    CASE
         WHEN raw_sex IN ('M', 'MALE', '1') THEN 'M'
         WHEN raw_sex IN ('F', 'FEMALE', '2') THEN 'F'
         ELSE 'UNK'

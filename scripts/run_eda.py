@@ -14,11 +14,18 @@ EDA_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "eda_sample"
 def run_eda():
     json_files = list(EDA_DIR.glob("*.json"))
     if not json_files:
-        console.print("[red]No JSON sample files found in data/raw/eda_sample/. Run fetch_eda_sample.py first.[/red]")
+        console.print(
+            "[red]No JSON sample files found in data/raw/eda_sample/. Run fetch_eda_sample.py first.[/red]"
+        )
         return
 
     sample_path = json_files[0]
-    console.print(Panel(f"[bold cyan]FAERS Real Dataset EDA: {sample_path.name}[/bold cyan]\nFile Size: {sample_path.stat().st_size / (1024*1024):.2f} MB", style="blue"))
+    console.print(
+        Panel(
+            f"[bold cyan]FAERS Real Dataset EDA: {sample_path.name}[/bold cyan]\nFile Size: {sample_path.stat().st_size / (1024 * 1024):.2f} MB",
+            style="blue",
+        )
+    )
 
     con = duckdb.connect()
 
@@ -30,7 +37,9 @@ def run_eda():
     """)
 
     total_reports = con.execute("SELECT COUNT(*) FROM raw_events").fetchone()[0]
-    console.print(f"[bold green]✓ Total Patient Safety Reports in partition:[/bold green] {total_reports:,}")
+    console.print(
+        f"[bold green]✓ Total Patient Safety Reports in partition:[/bold green] {total_reports:,}"
+    )
 
     # 1. Demographics Profiling
     stats = con.execute("""
@@ -52,11 +61,20 @@ def run_eda():
     demo_table.add_column("Value", style="green")
 
     demo_table.add_row("Total Reports in Partition", f"{total_cases:,}")
-    demo_table.add_row("Missing Age Rate", f"{missing_age / total_cases * 100:.1f}% ({missing_age:,})")
-    demo_table.add_row("Missing Sex Rate", f"{missing_sex / total_cases * 100:.1f}% ({missing_sex:,})")
+    demo_table.add_row(
+        "Missing Age Rate", f"{missing_age / total_cases * 100:.1f}% ({missing_age:,})"
+    )
+    demo_table.add_row(
+        "Missing Sex Rate", f"{missing_sex / total_cases * 100:.1f}% ({missing_sex:,})"
+    )
     demo_table.add_row("Death Outcome Cases", f"{deaths / total_cases * 100:.1f}% ({deaths:,})")
-    demo_table.add_row("Hospitalization Cases", f"{hospitalizations / total_cases * 100:.1f}% ({hospitalizations:,})")
-    demo_table.add_row("Life-Threatening Cases", f"{life_threat / total_cases * 100:.1f}% ({life_threat:,})")
+    demo_table.add_row(
+        "Hospitalization Cases",
+        f"{hospitalizations / total_cases * 100:.1f}% ({hospitalizations:,})",
+    )
+    demo_table.add_row(
+        "Life-Threatening Cases", f"{life_threat / total_cases * 100:.1f}% ({life_threat:,})"
+    )
     console.print(demo_table)
 
     # 2. Top 15 Most Frequently Reported Drugs

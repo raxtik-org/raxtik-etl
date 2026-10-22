@@ -1,13 +1,14 @@
 """dlt resource definitions for streaming FAERS tables with explicit schemas."""
 
 from pathlib import Path
-from typing import Generator, Iterable, List
+from typing import Generator, Iterable, Sequence
 
 import dlt
+from dlt.common.schema.typing import TAnySchemaColumns
 
 from raxtik_etl.sources.faers.parser import parse_faers_ascii_file
 
-DEMO_COLUMNS = {
+DEMO_COLUMNS: TAnySchemaColumns = {
     "primaryid": {"data_type": "text"},
     "caseid": {"data_type": "text"},
     "caseversion": {"data_type": "text"},
@@ -31,7 +32,7 @@ DEMO_COLUMNS = {
     "occr_country": {"data_type": "text"},
 }
 
-DRUG_COLUMNS = {
+DRUG_COLUMNS: TAnySchemaColumns = {
     "primaryid": {"data_type": "text"},
     "caseid": {"data_type": "text"},
     "drug_seq": {"data_type": "text"},
@@ -54,20 +55,20 @@ DRUG_COLUMNS = {
     "dose_freq": {"data_type": "text"},
 }
 
-REAC_COLUMNS = {
+REAC_COLUMNS: TAnySchemaColumns = {
     "primaryid": {"data_type": "text"},
     "caseid": {"data_type": "text"},
     "pt": {"data_type": "text"},
     "drug_rec_act": {"data_type": "text"},
 }
 
-OUTC_COLUMNS = {
+OUTC_COLUMNS: TAnySchemaColumns = {
     "primaryid": {"data_type": "text"},
     "caseid": {"data_type": "text"},
     "outc_cod": {"data_type": "text"},
 }
 
-INDI_COLUMNS = {
+INDI_COLUMNS: TAnySchemaColumns = {
     "primaryid": {"data_type": "text"},
     "caseid": {"data_type": "text"},
     "indi_drug_seq": {"data_type": "text"},
@@ -84,30 +85,30 @@ def _stream_files(files: Iterable[Path | str], table_type: str) -> Generator[dic
 @dlt.resource(
     name="demo", write_disposition="append", primary_key="primaryid", columns=DEMO_COLUMNS
 )
-def demo_resource(files: List[Path | str]):
+def demo_resource(files: Sequence[Path | str]):
     """Stream DEMO (Demographics) table."""
     yield from _stream_files(files, "demo")
 
 
 @dlt.resource(name="drug", write_disposition="append", columns=DRUG_COLUMNS)
-def drug_resource(files: List[Path | str]):
+def drug_resource(files: Sequence[Path | str]):
     """Stream DRUG table."""
     yield from _stream_files(files, "drug")
 
 
 @dlt.resource(name="reac", write_disposition="append", columns=REAC_COLUMNS)
-def reac_resource(files: List[Path | str]):
+def reac_resource(files: Sequence[Path | str]):
     """Stream REAC (Adverse Reactions) table."""
     yield from _stream_files(files, "reac")
 
 
 @dlt.resource(name="outc", write_disposition="append", columns=OUTC_COLUMNS)
-def outc_resource(files: List[Path | str]):
+def outc_resource(files: Sequence[Path | str]):
     """Stream OUTC (Patient Outcomes) table."""
     yield from _stream_files(files, "outc")
 
 
 @dlt.resource(name="indi", write_disposition="append", columns=INDI_COLUMNS)
-def indi_resource(files: List[Path | str]):
+def indi_resource(files: Sequence[Path | str]):
     """Stream INDI (Indications) table."""
     yield from _stream_files(files, "indi")

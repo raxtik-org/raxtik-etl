@@ -1,8 +1,10 @@
 # raxtik-etl ⚡
 
+[![Documentation Status](https://readthedocs.org/projects/raxtik-etl/badge/?version=latest)](https://raxtik-etl.readthedocs.io/en/latest/?badge=latest)
 [![CI](https://github.com/VigilForms/raxtik-etl/actions/workflows/ci.yml/badge.svg)](https://github.com/VigilForms/raxtik-etl/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/vigilforms-org/raxtik-etl/graph/badge.svg?token=)](https://codecov.io/gh/vigilforms-org/raxtik-etl)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python >= 3.11](https://img.shields.io/badge/python->=_3.11-blue.svg)](https://www.python.org/downloads/)
 
 High-performance canonical pharmacovigilance (PV) data engine and packaging toolkit powered by **DuckDB** and **Polars**.
 
@@ -76,7 +78,7 @@ In addition to raw submissions, `raxtik-etl` compiles a deduplicated, authoritat
 
 ### 1. Installation
 
-Requires Python 3.11+ (Python 3.13 recommended) and [`uv`](https://github.com/astral-sh/uv).
+Requires Python >= 3.11 (Python 3.13 recommended) and [`uv`](https://github.com/astral-sh/uv).
 
 ```bash
 # Set local Python version
@@ -131,14 +133,18 @@ with FAERS(release="2004Q1", package_dir="data/packages") as faers:
 
     # 2. Retrieve authoritative resolved cases
     cases_df = faers.cases(limit=1000)
-    print(cases_df.select([
-        "case_id",
-        "primary_id",
-        "canonical_case_version",
-        "standard_age_years",
-        "standard_sex_label",
-        "has_serious_outcome",
-    ]))
+    print(
+        cases_df.select(
+            [
+                "case_id",
+                "primary_id",
+                "canonical_case_version",
+                "standard_age_years",
+                "standard_sex_label",
+                "has_serious_outcome",
+            ]
+        )
+    )
 
     # 3. Query primary suspect drugs and reactions
     drugs_df = faers.drugs(primary_suspect_only=True)
@@ -155,6 +161,7 @@ Adding a new pharmacovigilance source (e.g., EudraVigilance, PMDA, or clinical t
 ```python
 from raxtik_etl.sources.protocol import SourceAdapter, SourceArtifact, SourceLoadResult
 import duckdb
+
 
 class MyCustomSourceAdapter:
     source_name: str = "my_pv_source"

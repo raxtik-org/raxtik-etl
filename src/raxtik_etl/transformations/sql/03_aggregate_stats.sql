@@ -37,21 +37,21 @@ WITH total_metrics AS (
     SELECT COUNT(DISTINCT primaryid) AS total_cases FROM dedup_demo
 ),
 drug_totals AS (
-    SELECT 
+    SELECT
         drug_name,
         COUNT(DISTINCT primaryid) AS drug_total_cases
     FROM dedup_drug
     GROUP BY drug_name
 ),
 reac_totals AS (
-    SELECT 
+    SELECT
         reaction_pt,
         COUNT(DISTINCT primaryid) AS reac_total_cases
     FROM dedup_reac
     GROUP BY reaction_pt
 ),
 co_occurrences AS (
-    SELECT 
+    SELECT
         d.drug_name,
         r.reaction_pt,
         COUNT(DISTINCT d.primaryid) AS a_count
@@ -59,7 +59,7 @@ co_occurrences AS (
     JOIN dedup_reac r ON d.primaryid = r.primaryid
     GROUP BY d.drug_name, r.reaction_pt
 )
-SELECT 
+SELECT
     c.drug_name,
     c.reaction_pt,
     c.a_count AS co_occurrence_count,
@@ -73,7 +73,7 @@ SELECT
     -- b = dt.drug_total_cases - c.a_count
     -- c = rt.reac_total_cases - c.a_count
     -- d = (tm.total_cases - dt.drug_total_cases) - (rt.reac_total_cases - c.a_count)
-    CASE 
+    CASE
         WHEN (tm.total_cases - dt.drug_total_cases) > 0 AND (rt.reac_total_cases - c.a_count) > 0 THEN
             ROUND(
                 ((c.a_count * 1.0) / NULLIF(dt.drug_total_cases, 0)) /
@@ -90,7 +90,7 @@ ORDER BY c.drug_name, c.a_count DESC;
 
 -- 5. Drug Demographics Distribution
 CREATE OR REPLACE TABLE drug_demographics AS
-SELECT 
+SELECT
     d.drug_name,
     COUNT(DISTINCT d.primaryid) AS total_cases,
     ROUND(AVG(m.age_years), 2) AS mean_age,
@@ -110,7 +110,7 @@ CREATE OR REPLACE TABLE drug_indications AS
 WITH drug_case_counts AS (
     SELECT drug_name, COUNT(DISTINCT primaryid) AS total_cases FROM dedup_drug GROUP BY drug_name
 )
-SELECT 
+SELECT
     d.drug_name,
     i.indication_pt,
     COUNT(DISTINCT d.primaryid) AS indication_count,
@@ -126,7 +126,7 @@ CREATE OR REPLACE TABLE drug_routes AS
 WITH drug_case_counts AS (
     SELECT drug_name, COUNT(DISTINCT primaryid) AS total_cases FROM dedup_drug GROUP BY drug_name
 )
-SELECT 
+SELECT
     d.drug_name,
     d.route,
     COUNT(DISTINCT d.primaryid) AS route_count,
@@ -139,7 +139,7 @@ ORDER BY d.drug_name, route_count DESC;
 
 -- 8. Drug Serious Outcomes Distribution
 CREATE OR REPLACE TABLE drug_outcomes AS
-SELECT 
+SELECT
     d.drug_name,
     COUNT(DISTINCT d.primaryid) AS total_cases,
     COUNT(DISTINCT CASE WHEN o.outc_cod = 'DE' THEN d.primaryid END) AS death_count,

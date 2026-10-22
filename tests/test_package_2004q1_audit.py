@@ -227,4 +227,3 @@ def test_10_clinical_sanity_and_outlier_ranges(con):
     # Outcome death count
     deaths = con.execute("SELECT COUNT(*) FROM outc WHERE outcome_code = 'DE'").fetchone()[0]
     assert deaths == 7286
-

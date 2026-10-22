@@ -1,0 +1,43 @@
+[default.extend-words]
+# FDA FAERS Official Domain Terms & Acronyms
+ther = "ther"
+ot = "ot"
+outc = "outc"
+indi = "indi"
+reac = "reac"
+rpsr = "rpsr"
+isr = "isr"
+raxtik = "raxtik"
+vigilforms = "vigilforms"
+faers = "faers"
+aems = "aems"
+meddra = "meddra"
+cioms = "cioms"
+icsr = "icsr"
+e2b = "e2b"
+dechal = "dechal"
+rechal = "rechal"
+occp = "occp"
+occr = "occr"
+mfr = "mfr"
+sndr = "sndr"
+gndr = "gndr"
+foll = "foll"
+rept = "rept"
+prod = "prod"
+auth = "auth"
+lit = "lit"
+confid = "confid"
+pyrefly = "pyrefly"
+
+[files]
+extend-exclude = [
+    ".git",
+    ".venv",
+    "docs/_build",
+    "data",
+    "*.duckdb",
+    "*.parquet",
+    "*.zip",
+    "uv.lock",
+]

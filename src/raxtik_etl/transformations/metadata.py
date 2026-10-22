@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -143,28 +144,32 @@ def populate_package_metadata(
     # 4. Official FDA Reference Tables (_code_*) & Raxtik Semantics
     _populate_reference_dimensions(con)
 
+    def _scalar(sql: str, default: Any = 0) -> Any:
+        row = con.execute(sql).fetchone()
+        return row[0] if row is not None else default
+
     # 5. _data_quality_report (Automated EDA Profiling)
-    total_reports = con.execute("SELECT COUNT(*) FROM demo;").fetchone()[0]
-    total_cases = con.execute("SELECT COUNT(DISTINCT case_id) FROM demo;").fetchone()[0]
-    total_drugs = con.execute("SELECT COUNT(*) FROM drug;").fetchone()[0]
-    total_reactions = con.execute("SELECT COUNT(*) FROM reac;").fetchone()[0]
-    total_outcomes = con.execute("SELECT COUNT(*) FROM outc;").fetchone()[0]
+    total_reports = _scalar("SELECT COUNT(*) FROM demo;")
+    total_cases = _scalar("SELECT COUNT(DISTINCT case_id) FROM demo;")
+    total_drugs = _scalar("SELECT COUNT(*) FROM drug;")
+    total_reactions = _scalar("SELECT COUNT(*) FROM reac;")
+    total_outcomes = _scalar("SELECT COUNT(*) FROM outc;")
 
-    missing_age_pct = con.execute("""
+    missing_age_pct = _scalar("""
         SELECT ROUND(AVG(CASE WHEN reported_age IS NULL THEN 1.0 ELSE 0.0 END) * 100, 2) FROM demo;
-    """).fetchone()[0]
+    """)
 
-    missing_sex_pct = con.execute("""
+    missing_sex_pct = _scalar("""
         SELECT ROUND(AVG(CASE WHEN reported_sex_code IS NULL OR reported_sex_code IN ('UNK', 'NS') THEN 1.0 ELSE 0.0 END) * 100, 2) FROM demo;
-    """).fetchone()[0]
+    """)
 
-    death_outcomes = con.execute("""
+    death_outcomes = _scalar("""
         SELECT COUNT(*) FROM outc WHERE outcome_code = 'DE';
-    """).fetchone()[0]
+    """)
 
-    hosp_outcomes = con.execute("""
+    hosp_outcomes = _scalar("""
         SELECT COUNT(*) FROM outc WHERE outcome_code = 'HO';
-    """).fetchone()[0]
+    """)
 
     con.execute("""
         CREATE OR REPLACE TABLE _data_quality_report (

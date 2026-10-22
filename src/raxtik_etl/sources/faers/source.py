@@ -1,7 +1,7 @@
 """dlt source definition for FDA FAERS datasets."""
 
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import dlt
 
@@ -19,7 +19,7 @@ from raxtik_etl.sources.faers.resources import (
 @dlt.source(name="faers")
 def faers_source(
     data_dir: Optional[Union[Path, str]] = None,
-    files_map: Optional[Dict[str, List[Path]]] = None,
+    files_map: Optional[Any] = None,
     tables: Optional[List[str]] = None,
 ):
     """
@@ -33,9 +33,12 @@ def faers_source(
     Yields:
         Configured dlt resources.
     """
+    active_files: Dict[str, Any]
     if files_map is None:
         source_dir = Path(data_dir) if data_dir else RAW_DATA_DIR
-        files_map = find_local_faers_files(source_dir)
+        active_files = find_local_faers_files(source_dir)
+    else:
+        active_files = files_map
 
     requested_tables = set(tables) if tables else {"demo", "drug", "reac", "outc", "indi"}
 
@@ -49,9 +52,9 @@ def faers_source(
 
     found_any = False
     for tbl_name, factory in resource_factories.items():
-        if tbl_name in requested_tables and tbl_name in files_map and files_map[tbl_name]:
+        if tbl_name in requested_tables and tbl_name in active_files and active_files[tbl_name]:
             found_any = True
-            yield factory(files=files_map[tbl_name])
+            yield factory(files=active_files[tbl_name])
 
     if not found_any:
         # If no files found, still yield an empty resource to allow dlt introspection

@@ -73,8 +73,9 @@ def run_transformations(
     results: Dict[str, int] = {}
     for tbl in transformed_tables:
         try:
-            count = con.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
-            results[tbl] = count
+            row = con.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()
+            if row is not None:
+                results[tbl] = int(row[0])
         except Exception:
             pass
 

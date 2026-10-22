@@ -2,5 +2,5 @@
 
 from raxtik_etl.sdk import FAERS
 
-__version__ = "0.1.0"
+__version__ = "0.1.0.dev0"
 __all__ = ["FAERS", "__version__"]

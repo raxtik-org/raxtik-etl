@@ -4,13 +4,28 @@ build-backend = "hatchling.build"
 
 [project]
 name = "raxtik-etl"
-version = "0.1.0"
-description = "Adverse event ETL pipeline using dlt and DuckDB for pharmacovigilance synthetic data generation"
+version = "0.1.0.dev0"
+description = "Adverse event ETL pipeline and canonical data platform for pharmacovigilance and safety data generation"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-or-later" }
 authors = [
     { name = "VigilForms Team" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
 ]
 dependencies = [
     "dlt[duckdb]>=1.0.0",
@@ -26,9 +41,22 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "huggingface_hub>=0.23.0",
+    "mypy>=1.15.0",
+    "pre-commit>=4.0.0",
+    "pyrefly>=1.4.0",
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.5.0",
+    "types-tqdm>=4.67.0",
+    "typos>=1.30.0",
+]
+docs = [
+    "myst-parser>=5.1.0",
+    "sphinx>=9.0.4",
+    "sphinx-autodoc-typehints>=3.6.1",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-rtd-theme>=3.1.0",
 ]
 
 [project.scripts]
@@ -39,7 +67,7 @@ packages = ["src/raxtik_etl"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -48,3 +76,27 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.pyrefly]
+project-includes = [
+    "src/**/*.py",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "dlt.*",
+    "raxtik_etl.sources.faers.resources",
+]
+ignore_errors = true
+
+[dependency-groups]
+dev = [
+    "tox>=4.67.1",
+    "tox-uv>=1.37.0",
+]

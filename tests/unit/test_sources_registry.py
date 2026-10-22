@@ -30,5 +30,7 @@ def test_get_source_adapter_instantiation():
 
 def test_plugin_not_found_raises_clean_error():
     """Verify that requesting an uninstalled connector raises SourcePluginNotFoundError."""
-    with pytest.raises(SourcePluginNotFoundError, match="Source connector 'unknown_xyz' is not installed"):
+    with pytest.raises(
+        SourcePluginNotFoundError, match="Source connector 'unknown_xyz' is not installed"
+    ):
         get_source_adapter("unknown_xyz")

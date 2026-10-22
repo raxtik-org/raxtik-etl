@@ -117,4 +117,3 @@
 | 2 | `DRUG_SEQ` | `caseid` | `caseid` |
 | 3 | `INDI_PT` | `indi_drug_seq` | `indi_drug_seq` |
 | 4 | — | `indi_pt` | `indi_pt` |
-

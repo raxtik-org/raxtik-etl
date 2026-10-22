@@ -1,7 +1,7 @@
 -- 02_normalize_drugs.sql: Standardize drug names and primary suspect classifications
 
 CREATE OR REPLACE TABLE dedup_drug AS
-SELECT 
+SELECT
     d.primaryid,
     COALESCE(d.caseid, m.caseid) AS caseid,
     d.drug_seq,

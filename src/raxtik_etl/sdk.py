@@ -28,19 +28,50 @@ DEFAULT_PACKAGE_DIR = Path("data/packages")
 class FAERS:
     """Interface to inspect and query a versioned FAERS data package."""
 
-    def __init__(self, release: str, package_dir: Optional[Union[str, Path]] = None):
+    def __init__(
+        self,
+        release: str,
+        package_dir: Optional[Union[str, Path]] = None,
+        download_if_missing: bool = False,
+        hf_repo: Optional[str] = None,
+    ):
         self.release = release.upper()
         self.pkg_dir = Path(package_dir) if package_dir else DEFAULT_PACKAGE_DIR
         self.duckdb_path = self.pkg_dir / f"faers_{self.release}.duckdb"
 
         if not self.duckdb_path.exists():
-            raise FileNotFoundError(
-                f"FAERS package for release {self.release} not found at {self.duckdb_path}. "
-                f"Build it first using `raxtik-etl build-package --release {self.release}`."
-            )
+            if download_if_missing:
+                from raxtik_etl.distribution.huggingface import (
+                    DEFAULT_HF_REPO,
+                    download_package_from_hf,
+                )
+
+                repo = hf_repo or DEFAULT_HF_REPO
+                download_package_from_hf(self.release, dest_dir=self.pkg_dir, repo_id=repo)
+            else:
+                raise FileNotFoundError(
+                    f"FAERS package for release {self.release} not found at {self.duckdb_path}. "
+                    f"Build it locally using `raxtik-etl build-package --release {self.release}` "
+                    f"or pass `download_if_missing=True` (or call `FAERS.from_hf('{self.release}')`) to download from Hugging Face."
+                )
 
         self._con = duckdb.connect(self.duckdb_path.as_posix(), read_only=True)
         self._validate_package_compatibility()
+
+    @classmethod
+    def from_hf(
+        cls,
+        release: str,
+        package_dir: Optional[Union[str, Path]] = None,
+        hf_repo: Optional[str] = None,
+    ) -> FAERS:
+        """Loads a FAERS package, automatically downloading from Hugging Face Hub if not present locally."""
+        return cls(
+            release=release,
+            package_dir=package_dir,
+            download_if_missing=True,
+            hf_repo=hf_repo,
+        )
 
     def _validate_package_compatibility(self):
         """Validates that the package format version is compatible with this SDK version."""
@@ -58,7 +89,9 @@ class FAERS:
     def query(self, sql: str) -> pl.DataFrame:
         """Executes arbitrary SQL on the package and returns a Polars DataFrame."""
         arrow_table = self._con.execute(sql).arrow()
-        return pl.from_arrow(arrow_table)
+        df = pl.from_arrow(arrow_table)
+        assert isinstance(df, pl.DataFrame)
+        return df
 
     def reports(self, limit: Optional[int] = None) -> pl.DataFrame:
         """Returns the immutable historical submission reports (DEMO table)."""

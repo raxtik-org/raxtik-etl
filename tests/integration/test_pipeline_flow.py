@@ -89,7 +89,9 @@ def test_zero_regression_pipeline_via_entrypoint_discovery(tmp_path: Path):
     assert counts["ther"] == 84964, f"ther count mismatch: {counts['ther']}"
     assert counts["rpsr"] == 78306, f"rpsr count mismatch: {counts['rpsr']}"
 
-    total_facts = sum(counts[tbl] for tbl in ["demo", "drug", "reac", "outc", "indi", "ther", "rpsr"])
+    total_facts = sum(
+        counts[tbl] for tbl in ["demo", "drug", "reac", "outc", "indi", "ther", "rpsr"]
+    )
     assert total_facts == 865174, f"Total fact sum mismatch: {total_facts} != 865,174"
 
     con.close()

@@ -1,6 +1,6 @@
 # FDA FAERS/AEMS Historical Schema Audit & Evolution Guide (2004 – 2026+)
 
-> **Phase 0 Status**: 🟡 **Documentation Verified — Physical Header Verification Pending**  
+> **Phase 0 Status**: 🟡 **Documentation Verified — Physical Header Verification Pending**
 > *Documentation verification confirms major milestone boundaries (2004Q1, 2012Q4, 2014Q3, 2026Q1/March 11). Individual column existence below reflects official FDA "Summary of Changes" publications.*
 
 ---
@@ -67,20 +67,20 @@
 
 ### 🏥 Tables 4–7: Outcomes, Indications, Therapy, and Report Sources
 
-* **`OUTC`**: `ISR$OUTC_COD` (S1) $\rightarrow$ `PRIMARYID$CASEID$OUTC_COD` (S2–S4).
-* **`INDI`**: `ISR$DRUG_SEQ$INDI_PT` (S1) $\rightarrow$ `PRIMARYID$CASEID$INDI_DRUG_SEQ$INDI_PT` (S2–S4).
-* **`THER`**: `ISR$DRUG_SEQ$START_DT$END_DT$DUR$DUR_COD` (S1) $\rightarrow$ `PRIMARYID$CASEID$DSG_DRUG_SEQ$START_DT$END_DT$DUR$DUR_COD` (S2–S4).
-* **`RPSR`**: `ISR$RPSR_COD` (S1) $\rightarrow$ `PRIMARYID$CASEID$RPSR_COD` (S2–S4).
+* **`OUTC`**: `ISR$OUTC_COD` (S1) → `PRIMARYID$CASEID$OUTC_COD` (S2–S4).
+* **`INDI`**: `ISR$DRUG_SEQ$INDI_PT` (S1) → `PRIMARYID$CASEID$INDI_DRUG_SEQ$INDI_PT` (S2–S4).
+* **`THER`**: `ISR$DRUG_SEQ$START_DT$END_DT$DUR$DUR_COD` (S1) → `PRIMARYID$CASEID$DSG_DRUG_SEQ$START_DT$END_DT$DUR$DUR_COD` (S2–S4).
+* **`RPSR`**: `ISR$RPSR_COD` (S1) → `PRIMARYID$CASEID$RPSR_COD` (S2–S4).
 
 ---
 
 ## 3. Transformation & Evolution Categories (8-Category Formal System)
 
 * **Category A (Identical)**: Same field name, type, and semantic meaning across eras.
-* **Category B (Renamed / Alias)**: Same semantic concept, but FDA renamed column (e.g., `GNDR_COD` $\rightarrow$ `SEX`).
+* **Category B (Renamed / Alias)**: Same semantic concept, but FDA renamed column (e.g., `GNDR_COD` → `SEX`).
 * **Category C (Added Later)**: Field introduced in a documented QDE expansion (e.g., `PROD_AI` in 2014Q3). Mapped as `NOT_PRESENT_IN_SOURCE` for earlier signatures.
 * **Category D (Deprecated / Unmapped)**: Field present in early source files but unmapped into canonical entity (e.g., `IMAGE`, `CONFID`). Recorded explicitly in `_schema_registry`.
 * **Category E (Code-Set Evolution)**: Field exists across eras, but allowed coded values evolved or were formatted differently.
-* **Category F (Semantic Split)**: Field unbundled into granular sub-fields in newer extracts (e.g., `DOSE_VBM` $\rightarrow$ `DOSE_AMT` + `DOSE_UNIT` + `DOSE_FREQ`).
+* **Category F (Semantic Split)**: Field unbundled into granular sub-fields in newer extracts (e.g., `DOSE_VBM` → `DOSE_AMT` + `DOSE_UNIT` + `DOSE_FREQ`).
 * **Category G (Derived / Standardized)**: Raxtik-derived standard columns (e.g., `standard_age_years`, `canonical_case_version`).
-* **Category H (Structural Relationship / Key Semantics Change)**: Identifier or foreign-key relationship shift (e.g. `ISR` $\rightarrow$ `PRIMARYID` + `CASEID` + `CASEVERSION`).
+* **Category H (Structural Relationship / Key Semantics Change)**: Identifier or foreign-key relationship shift (e.g. `ISR` → `PRIMARYID` + `CASEID` + `CASEVERSION`).
