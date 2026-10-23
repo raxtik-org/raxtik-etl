@@ -11,8 +11,8 @@ import raxtik_etl  # noqa: E402
 
 # Project information
 project = "raxtik-etl"
-copyright = "2026, VigilForms Team"
-author = "VigilForms Team"
+copyright = "2026, Raxtik Team"
+author = "Raxtik Team"
 release = raxtik_etl.__version__
 version = raxtik_etl.__version__
 

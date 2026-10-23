@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-or-later" }
 authors = [
-    { name = "VigilForms Team" }
+    { name = "Raxtik Team" }
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -58,9 +58,24 @@ docs = [
     "sphinx-copybutton>=0.5.2",
     "sphinx-rtd-theme>=3.1.0",
 ]
+faers = [
+    "raxtik-source-faers>=0.1.0.dev0",
+]
+all = [
+    "raxtik-source-faers>=0.1.0.dev0",
+]
+
+[project.urls]
+Homepage = "https://github.com/raxtik-org/raxtik-etl"
+Documentation = "https://raxtik-etl.readthedocs.io"
+Repository = "https://github.com/raxtik-org/raxtik-etl"
+Issues = "https://github.com/raxtik-org/raxtik-etl/issues"
 
 [project.scripts]
 raxtik-etl = "raxtik_etl.cli:app"
+
+[tool.uv.sources]
+raxtik-source-faers = { path = "../raxtik-source-faers", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/raxtik_etl"]

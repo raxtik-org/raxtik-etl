@@ -10,7 +10,7 @@ The project uses [`uv`](https://docs.astral.sh/uv/) as its fast Python package a
 
 ```bash
 # Clone the repository
-git clone https://github.com/vigilforms-org/raxtik-etl.git
+git clone https://github.com/raxtik-org/raxtik-etl.git
 cd raxtik-etl
 
 # Install core and development dependencies
@@ -35,7 +35,7 @@ We use **Ruff** for linting and formatting, **Typos** for spell checking, and **
 
 ### PR Auto-Formatting (Zero Hassle)
 
-You do **not** need to install or run local pre-commit git hooks. 
+You do **not** need to install or run local pre-commit git hooks.
 
 When you open a Pull Request:
 1. `pre-commit.ci` automatically runs Ruff formatting, import sorting, and Typos checks.

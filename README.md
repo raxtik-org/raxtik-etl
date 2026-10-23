@@ -1,8 +1,8 @@
 # raxtik-etl ⚡
 
 [![Documentation Status](https://readthedocs.org/projects/raxtik-etl/badge/?version=latest)](https://raxtik-etl.readthedocs.io/en/latest/?badge=latest)
-[![CI](https://github.com/VigilForms/raxtik-etl/actions/workflows/ci.yml/badge.svg)](https://github.com/VigilForms/raxtik-etl/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/vigilforms-org/raxtik-etl/graph/badge.svg?token=)](https://codecov.io/gh/vigilforms-org/raxtik-etl)
+[![CI](https://github.com/raxtik-org/raxtik-etl/actions/workflows/ci.yml/badge.svg)](https://github.com/raxtik-org/raxtik-etl/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/raxtik-org/raxtik-etl/graph/badge.svg?token=)](https://codecov.io/gh/raxtik-org/raxtik-etl)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
 [![Python >= 3.11](https://img.shields.io/badge/python->=_3.11-blue.svg)](https://www.python.org/downloads/)
 
@@ -50,7 +50,7 @@ High-performance canonical pharmacovigilance (PV) data engine and packaging tool
 ```
 
 ### Decoupled Source Plugins
-`raxtik-etl` contains **zero** source-specific proprietary parsing, column aliases, or archive file logic. Connectors such as [`raxtik-source-faers`](https://github.com/VigilForms/raxtik-source-faers) implement the `SourceAdapter` protocol and register via Python entry points (`raxtik_etl.sources`).
+`raxtik-etl` contains **zero** source-specific proprietary parsing, column aliases, or archive file logic. Connectors such as [`raxtik-source-faers`](https://github.com/raxtik-org/raxtik-source-faers) implement the `SourceAdapter` protocol and register via Python entry points (`raxtik_etl.sources`).
 
 ---
 
