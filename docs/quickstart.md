@@ -93,5 +93,5 @@ raxtik-etl hf-download --release 2004Q1
 
 # Upload compiled package to Hugging Face Hub (requires HF_TOKEN)
 export HF_TOKEN="hf_..."
-raxtik-etl hf-upload --release 2004Q1 --repo-id vigilforms/faers-safety-database
+raxtik-etl hf-upload --release 2004Q1 --repo-id raxtik-org/faers-safety-database
 ```

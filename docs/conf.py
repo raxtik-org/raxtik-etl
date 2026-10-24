@@ -47,12 +47,12 @@ myst_enable_extensions = [
 myst_heading_anchors = 3
 
 # Templates & patterns
-templates_path = ["_templates"]
+templates_path = ["_templates"] if (Path(__file__).parent / "_templates").is_dir() else []
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # HTML output theme
 html_theme = "sphinx_rtd_theme"
-html_static_path = ["_static"]
+html_static_path = ["_static"] if (Path(__file__).parent / "_static").is_dir() else []
 
 html_theme_options = {
     "logo_only": False,

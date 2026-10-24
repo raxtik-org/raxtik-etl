@@ -6,15 +6,24 @@ Thank you for your interest in contributing to **raxtik-etl**! We welcome bug re
 
 ## 🛠️ Development Setup
 
-The project uses [`uv`](https://docs.astral.sh/uv/) as its fast Python package and environment manager.
+The project uses modular requirement files matching the Watchdog architecture:
+* `requirements-lint.txt` - Code style, spelling, and static typing (Ruff, Typos, Pyrefly)
+* `requirements-docs.txt` - Sphinx documentation and Read the Docs dependencies
+* `requirements-tests.txt` - Automated testing and test coverage
+* `requirements-dev.txt` - All development dependencies combined
 
 ```bash
 # Clone the repository
 git clone https://github.com/raxtik-org/raxtik-etl.git
 cd raxtik-etl
 
-# Install core and development dependencies
-uv sync --all-extras
+# Create virtualenv and install full development suite
+uv venv --python 3.13
+source .venv/bin/activate
+uv pip install -e . -r requirements-dev.txt
+
+# Or install only test dependencies:
+uv pip install -e . -r requirements-tests.txt
 ```
 
 ---
@@ -24,7 +33,12 @@ uv sync --all-extras
 Run the full automated test suite with `pytest`:
 
 ```bash
-uv run pytest
+pytest tests/ -v
+```
+
+Or run via `tox`:
+```bash
+tox -e py313
 ```
 
 ---
@@ -60,15 +74,11 @@ uv run --with pre-commit pre-commit run --all-files
 ---
 
 ## 🔍 Type Hint Checking
-
-We enforce strict static type annotations. You can verify type correctness using either **Pyrefly** (Meta's ultra-fast type checker) or **Mypy**:
+ 
+We enforce strict static type annotations. We use **Pyrefly** (Meta's Rust-powered type checker) for sub-second verification in both local development and CI:
 
 ```bash
-# Using Pyrefly (instant check)
-uv run --with pyrefly pyrefly check src/raxtik_etl
-
-# Using Mypy
-uv run --with mypy mypy src/raxtik_etl
+uv run pyrefly check src/raxtik_etl
 ```
 
 ---

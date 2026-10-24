@@ -44,6 +44,7 @@ api
 
 contributing
 contributors
+changelog
 ```
 
 ---

@@ -14,7 +14,7 @@ Example:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 import duckdb
 import polars as pl
@@ -88,7 +88,7 @@ class FAERS:
 
     def query(self, sql: str) -> pl.DataFrame:
         """Executes arbitrary SQL on the package and returns a Polars DataFrame."""
-        arrow_table = self._con.execute(sql).arrow()
+        arrow_table = cast(Any, self._con.execute(sql)).arrow()
         df = pl.from_arrow(arrow_table)
         assert isinstance(df, pl.DataFrame)
         return df

@@ -14,78 +14,94 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  UV_NO_SYNC: "1"
+
 jobs:
   quality:
-    name: 🧑‍🏭 Quality, Types & Docs
+    name: Lint & Type Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
+      - name: Set up uv & Python 3.13
         uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
           version: "latest"
+          python-version: "3.13"
 
-      - name: Set up Python
-        run: uv python install 3.13
-
-      - name: Install dependencies
+      - name: Install lint & typing dependencies
         run: |
-          uv venv --python 3.13
-          uv pip install -e ".[dev,docs]"
+          uv venv .venv --python 3.13
+          uv pip install -e . -r requirements-lint.txt
 
-      - name: Lint with Ruff
+      - name: Run code linters
         run: |
-          uv run ruff check .
-          uv run ruff format --check .
+          uv run --no-sync ruff check .
+          uv run --no-sync ruff format --check .
+          uv run --no-sync typos
 
-      - name: Check spelling with Typos
-        run: uv run typos
+      - name: Run Pyrefly static typing
+        run: uv run --no-sync pyrefly check src/raxtik_etl
 
-      - name: Type check with Pyrefly
-        run: uv run pyrefly check src/raxtik_etl
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Build documentation with Sphinx
-        run: uv run sphinx-build -b html docs docs/_build/html -W
+      - name: Set up uv & Python 3.13
+        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          version: "latest"
+          python-version: "3.13"
+
+      - name: Install docs dependencies
+        run: |
+          uv venv .venv --python 3.13
+          uv pip install -e . -r requirements-docs.txt
+
+      - name: Build documentation
+        run: uv run --no-sync sphinx-build -b html docs docs/_build/html -W
 
   test:
     name: test (${{ matrix.os }} - py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    needs: quality
+    needs: [quality, docs]
+    if: "!startsWith(github.head_ref, 'all-contributors/')"
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
         include:
-          # Test cutting-edge 3.14 & 3.15 on Ubuntu
           - os: ubuntu-latest
             python-version: "3.14"
           - os: ubuntu-latest
             python-version: "3.15"
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
+      - name: Set up uv & Python ${{ matrix.python-version }}
         uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
           version: "latest"
+          python-version: ${{ matrix.python-version }}
 
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install dependencies
+      - name: Install test dependencies
         run: |
-          uv venv --python ${{ matrix.python-version }}
-          uv pip install -e ".[dev]"
+          uv venv .venv --python ${{ matrix.python-version }}
+          uv pip install -e . -r requirements-tests.txt
 
-      - name: Run Pytest with Coverage
-        run: uv run pytest -v --cov=raxtik_etl --cov-report=xml --cov-report=term tests/
+      - name: Run test suite with coverage
+        run: uv run --no-sync pytest -v --cov=raxtik_etl --cov-report=xml --cov-report=term tests/
 
-      - name: Upload coverage to Codecov
+      - name: Upload coverage report to Codecov
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           files: ./coverage.xml

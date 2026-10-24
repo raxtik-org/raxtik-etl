@@ -88,7 +88,7 @@ Usage: raxtik-etl hf-download [OPTIONS]
 
 Options:
   -r, --release    <str>   Release identifier (e.g. 2004Q1) [default: 2004Q1]
-  --repo-id        <str>   Hugging Face dataset repo [default: vigilforms/faers-safety-database]
+  --repo-id        <str>   Hugging Face dataset repo [default: raxtik-org/faers-safety-database]
   -d, --dest-dir   <path>  Destination folder [default: data/packages]
   -f, --force              Overwrite existing local file
   --help                   Show help and exit.
@@ -101,7 +101,7 @@ Usage: raxtik-etl hf-upload [OPTIONS]
 
 Options:
   -r, --release    <str>   Release identifier (e.g. 2004Q1) [default: 2004Q1]
-  --repo-id        <str>   Hugging Face dataset repo [default: vigilforms/faers-safety-database]
+  --repo-id        <str>   Hugging Face dataset repo [default: raxtik-org/faers-safety-database]
   -p, --package-dir<path>  Directory containing packages [default: data/packages]
   -t, --token      <str>   Hugging Face write token (defaults to HF_TOKEN env var)
   --parquet/--no-parquet   Whether to include Parquet shards [default: True]
