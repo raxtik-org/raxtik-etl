@@ -8,6 +8,7 @@ Designed with zero-auth public downloads:
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -49,6 +50,10 @@ def download_package_from_hf(
     else:
         filename = f"{rel_upper}.duckdb"
 
+    match = re.search(r"(\d{4})Q[1-4]", rel_upper)
+    subfolder = match.group(1) if match else ("merged" if "merged" in rel_upper.lower() else "")
+    rel_path = f"{subfolder}/{filename}" if subfolder else filename
+
     dest_file = target_dir / filename
     if dest_file.exists() and not force:
         console.print(f"[bold green]Package already present locally:[/bold green] {dest_file}")
@@ -61,25 +66,38 @@ def download_package_from_hf(
         console.print(
             f"[bold cyan]Downloading {filename} from Hugging Face Hub ({repo_id})...[/bold cyan]"
         )
-        downloaded_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            repo_type="dataset",
-            local_dir=str(target_dir),
-        )
+        try:
+            downloaded_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=rel_path,
+                repo_type="dataset",
+                local_dir=str(target_dir),
+            )
+        except Exception:
+            # Fall back to root path if not in year subfolder
+            downloaded_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                repo_type="dataset",
+                local_dir=str(target_dir),
+            )
         return Path(downloaded_path)
     except ImportError:
         # Fallback to direct HTTP download via requests (no huggingface_hub needed)
-        url = f"https://huggingface.co/datasets/{repo_id}/resolve/main/{filename}"
+        url = f"https://huggingface.co/datasets/{repo_id}/resolve/main/{rel_path}"
         console.print(
             f"[bold cyan]Downloading {filename} via public direct stream from {url}...[/bold cyan]"
         )
 
         response = requests.get(url, stream=True, timeout=120)
         if response.status_code != 200:
-            raise RuntimeError(
-                f"Failed to download package '{filename}' from Hugging Face Hub at {url} (HTTP {response.status_code})."
-            )
+            # Try root URL fallback
+            fallback_url = f"https://huggingface.co/datasets/{repo_id}/resolve/main/{filename}"
+            response = requests.get(fallback_url, stream=True, timeout=120)
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Failed to download package '{filename}' from Hugging Face Hub at {url} (HTTP {response.status_code})."
+                )
 
         total_size = int(response.headers.get("content-length", 0))
         with (
@@ -110,6 +128,8 @@ def upload_package_to_hf(
 ) -> None:
     """
     Uploads a compiled .duckdb package and optional Parquet shards to Hugging Face Hub.
+
+    Organizes releases cleanly into year subfolders (e.g. 2004/faers_2004Q1.duckdb, merged/...).
 
     Requires `huggingface_hub` (available via `pip install 'raxtik-etl[dev]'`) and
     a Hugging Face write token (via argument or HF_TOKEN env var).
@@ -144,6 +164,18 @@ def upload_package_to_hf(
         duckdb_name = f"{rel_clean}.duckdb"
         parquet_dir_name = f"{rel_clean}.parquet"
 
+    # Route into year subfolder (e.g. 2004/...) or merged/...
+    match = re.search(r"(\d{4})Q[1-4]", rel_clean.upper())
+    if match:
+        subfolder = match.group(1)
+    elif "merged" in rel_clean.lower():
+        subfolder = "merged"
+    else:
+        subfolder = ""
+
+    path_in_repo_duckdb = f"{subfolder}/{duckdb_name}" if subfolder else duckdb_name
+    path_in_repo_parquet = f"{subfolder}/{parquet_dir_name}" if subfolder else parquet_dir_name
+
     duckdb_file = pkg_dir / duckdb_name
     parquet_dir = pkg_dir / parquet_dir_name
 
@@ -154,23 +186,25 @@ def upload_package_to_hf(
 
     # 1. Upload DuckDB file
     console.print(
-        f"[bold cyan]Uploading {duckdb_name} ({duckdb_file.stat().st_size / (1024 * 1024):.2f} MB) to HF dataset {repo_id}...[/bold cyan]"
+        f"[bold cyan]Uploading {duckdb_name} -> {path_in_repo_duckdb} ({duckdb_file.stat().st_size / (1024 * 1024):.2f} MB)...[/bold cyan]"
     )
     api.upload_file(
         path_or_fileobj=duckdb_file.as_posix(),
-        path_in_repo=duckdb_name,
+        path_in_repo=path_in_repo_duckdb,
         repo_id=repo_id,
         repo_type="dataset",
     )
-    console.print(f"[bold green]✓ Uploaded {duckdb_name} successfully.[/bold green]")
+    console.print(f"[bold green]✓ Uploaded {path_in_repo_duckdb} successfully.[/bold green]")
 
     # 2. Optionally upload Parquet shards
     if include_parquet and parquet_dir.exists():
-        console.print(f"[bold cyan]Uploading Parquet shards from {parquet_dir_name}...[/bold cyan]")
+        console.print(
+            f"[bold cyan]Uploading Parquet shards from {parquet_dir_name} -> {path_in_repo_parquet}...[/bold cyan]"
+        )
         api.upload_folder(
             folder_path=parquet_dir.as_posix(),
-            path_in_repo=parquet_dir_name,
+            path_in_repo=path_in_repo_parquet,
             repo_id=repo_id,
             repo_type="dataset",
         )
-        console.print(f"[bold green]✓ Uploaded {parquet_dir_name} successfully.[/bold green]")
+        console.print(f"[bold green]✓ Uploaded {path_in_repo_parquet} successfully.[/bold green]")

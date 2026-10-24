@@ -60,6 +60,11 @@ data/packages/*
 *.swo
 .DS_Store
 
+# Secrets and Tokens
+.env
+*.env
+.token.env
+
 # Local Backlog
 TODO.md
 TODO*.md

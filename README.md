@@ -1,6 +1,6 @@
 # raxtik-etl ⚡
 
-[![Documentation Status](https://readthedocs.org/projects/raxtik-etl/badge/?version=latest)](https://raxtik-etl.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://img.shields.io/readthedocs/raxtik-etl)](https://raxtik-etl.readthedocs.io/en/latest/)
 [![CI](https://github.com/raxtik-org/raxtik-etl/actions/workflows/ci.yml/badge.svg)](https://github.com/raxtik-org/raxtik-etl/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/raxtik-org/raxtik-etl/graph/badge.svg?token=)](https://codecov.io/gh/raxtik-org/raxtik-etl)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
