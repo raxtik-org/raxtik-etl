@@ -43,8 +43,8 @@ High-performance canonical pharmacovigilance (PV) data engine and packaging tool
                                ▼
    ┌────────────────────────────────────────────────────────┐
    │                 Downstream Ecosystem                   │
-   │  - vigilforms-data (Synthetic narratives, labs, E2B)   │
-   │  - vigilforms-api  (Case search, signal detection)     │
+   │  - raxtik-parser   (Synthetic narratives, clinical ML) │
+   │  - raxtik-api      (Case search, signal detection)     │
    │  - raxtik-studio   (Interactive safety workbench)      │
    └────────────────────────────────────────────────────────┘
 ```
@@ -206,7 +206,7 @@ ruff format .
 
 ## 📚 Documentation & Guides
 
-- [2004Q1 Dataset Integration & Usage Guide](docs/guides/2004q1_usage_guide.md): Downstream synthetic generation recipes for `vigilforms-data`.
+- [2004Q1 Dataset Integration & Usage Guide](docs/guides/2004q1_usage_guide.md): Downstream synthetic generation recipes and data consumption.
 - [FDA FAERS Official Data Dictionary](docs/fda_faers_official_data_dictionary.md): Field references across S1, S2, and S3 eras.
 - [Historical Schema Evolution Audit](docs/schema/historical_schema_audit.md): Longitudinal schema analysis from 2004Q1 to 2026Q2.
 

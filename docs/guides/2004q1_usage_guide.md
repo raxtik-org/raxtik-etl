@@ -1,6 +1,6 @@
 # 2004Q1 Dataset Integration & Usage Guide
 
-This guide explains how downstream applications (such as `vigilforms-data` patient simulation, adverse event generation, and analytics) consume the compiled **2004 Q1** FAERS data package.
+This guide explains how downstream applications (such as patient simulation, clinical safety modeling, and analytics) consume the compiled **2004 Q1** FAERS data package.
 
 ---
 
@@ -60,7 +60,7 @@ with FAERS("2004Q1") as faers:
 
 ---
 
-## 🧬 Data Generation Recipe for `vigilforms-data`
+## 🧬 Data Generation Recipe for Downstream Safety Analytics
 
 To generate realistic synthetic patients and adverse event simulation profiles based on empirical 2004Q1 clinical patterns:
 
