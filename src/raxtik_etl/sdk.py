@@ -88,10 +88,7 @@ class FAERS:
 
     def query(self, sql: str) -> pl.DataFrame:
         """Executes arbitrary SQL on the package and returns a Polars DataFrame."""
-        arrow_table = cast(Any, self._con.execute(sql)).arrow()
-        df = pl.from_arrow(arrow_table)
-        assert isinstance(df, pl.DataFrame)
-        return df
+        return self._con.sql(sql).pl()
 
     def reports(self, limit: Optional[int] = None) -> pl.DataFrame:
         """Returns the immutable historical submission reports (DEMO table)."""
