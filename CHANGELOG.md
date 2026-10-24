@@ -13,3 +13,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dual presentation packaging into DuckDB relational databases and Parquet shards.
 - Zero-copy Python Safety SDK with Polars DataFrames (`FAERS`).
 - Hugging Face Hub remote distribution client (zero-auth streaming downloads).
+- Automated CI quality matrix across Python 3.11–3.15 and multi-OS runners.
