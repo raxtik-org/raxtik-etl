@@ -59,12 +59,13 @@ docs = [
     "sphinx-copybutton>=0.5.2",
     "sphinx-rtd-theme>=3.1.0",
 ]
-faers = [
-    "raxtik-source-faers>=0.1.0.dev0",
-]
-all = [
-    "raxtik-source-faers>=0.1.0.dev0",
-]
+# Optional source connectors (to be enabled once raxtik-source-faers is published on PyPI)
+# faers = [
+#     "raxtik-source-faers>=0.1.0.dev0",
+# ]
+# all = [
+#     "raxtik-source-faers>=0.1.0.dev0",
+# ]
 
 [project.urls]
 Homepage = "https://github.com/raxtik-org/raxtik-etl"
@@ -75,8 +76,6 @@ Issues = "https://github.com/raxtik-org/raxtik-etl/issues"
 [project.scripts]
 raxtik-etl = "raxtik_etl.cli:app"
 
-[tool.uv.sources]
-raxtik-source-faers = { path = "../raxtik-source-faers", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/raxtik_etl"]

@@ -1689,9 +1689,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-all = [
-    { name = "raxtik-source-faers" },
-]
 dev = [
     { name = "huggingface-hub" },
     { name = "mypy" },
@@ -1712,9 +1709,6 @@ docs = [
     { name = "sphinx-autodoc-typehints", version = "3.17.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "sphinx-copybutton" },
     { name = "sphinx-rtd-theme" },
-]
-faers = [
-    { name = "raxtik-source-faers" },
 ]
 
 [package.dev-dependencies]
@@ -1738,8 +1732,6 @@ requires-dist = [
     { name = "pyrefly", marker = "extra == 'dev'", specifier = ">=1.4.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "raxtik-source-faers", marker = "extra == 'all'", editable = "../raxtik-source-faers" },
-    { name = "raxtik-source-faers", marker = "extra == 'faers'", editable = "../raxtik-source-faers" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5.0" },
@@ -1752,46 +1744,13 @@ requires-dist = [
     { name = "types-tqdm", marker = "extra == 'dev'", specifier = ">=4.67.0" },
     { name = "typos", marker = "extra == 'dev'", specifier = ">=1.30.0" },
 ]
-provides-extras = ["dev", "docs", "faers", "all"]
+provides-extras = ["dev", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "tox", specifier = ">=4.67.1" },
     { name = "tox-uv", specifier = ">=1.37.0" },
 ]
-
-[[package]]
-name = "raxtik-source-faers"
-version = "0.1.0.dev0"
-source = { editable = "../raxtik-source-faers" }
-dependencies = [
-    { name = "certifi" },
-    { name = "duckdb" },
-    { name = "raxtik-etl" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "tqdm" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "certifi", specifier = ">=2026.10.19" },
-    { name = "duckdb", specifier = ">=1.1.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "pyrefly", marker = "extra == 'dev'", specifier = ">=1.4.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "raxtik-etl", editable = "." },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "rich", specifier = ">=13.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5.0" },
-    { name = "tqdm", specifier = ">=4.66.0" },
-    { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.31.0" },
-    { name = "types-tqdm", marker = "extra == 'dev'", specifier = ">=4.67.0" },
-    { name = "typos", marker = "extra == 'dev'", specifier = ">=1.30.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "requests"
