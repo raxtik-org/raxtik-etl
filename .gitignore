@@ -59,3 +59,7 @@ data/packages/*
 *.swp
 *.swo
 .DS_Store
+
+# Local Backlog
+TODO.md
+TODO*.md
