@@ -16,7 +16,6 @@ sphinx:
 # Python environment and dependencies
 python:
   install:
+    - requirements: requirements-docs.txt
     - method: pip
       path: .
-      extra_dependencies:
-        - .[docs]
