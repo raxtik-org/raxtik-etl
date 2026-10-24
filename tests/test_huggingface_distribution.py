@@ -14,7 +14,7 @@ from raxtik_etl.distribution.huggingface import (
 def test_hf_repo_default(monkeypatch):
     import os
 
-    expected = os.getenv("RAXTIK_HF_REPO", "vigilforms/faers-safety-database")
+    expected = os.getenv("RAXTIK_HF_REPO", "raxtik-org/faers-safety-database")
     assert DEFAULT_HF_REPO == expected
 
 

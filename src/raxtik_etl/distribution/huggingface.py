@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 console = Console()
 
-DEFAULT_HF_REPO = os.getenv("RAXTIK_HF_REPO", "vigilforms/faers-safety-database")
+DEFAULT_HF_REPO = os.getenv("RAXTIK_HF_REPO", "raxtik-org/faers-safety-database")
 
 
 def download_package_from_hf(
