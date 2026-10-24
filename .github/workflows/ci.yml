@@ -14,6 +14,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  UV_NO_SYNC: "1"
+
 jobs:
   quality:
     name: Lint & Type Check
@@ -22,13 +25,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
+      - name: Set up uv & Python 3.13
         uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
           version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.13
+          python-version: "3.13"
 
       - name: Install lint & typing dependencies
         run: |
@@ -37,12 +38,12 @@ jobs:
 
       - name: Run code linters
         run: |
-          uv run ruff check .
-          uv run ruff format --check .
-          uv run typos
+          uv run --no-sync ruff check .
+          uv run --no-sync ruff format --check .
+          uv run --no-sync typos
 
       - name: Run Pyrefly static typing
-        run: uv run pyrefly check src/raxtik_etl
+        run: uv run --no-sync pyrefly check src/raxtik_etl
 
   docs:
     name: Documentation
@@ -51,13 +52,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
+      - name: Set up uv & Python 3.13
         uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
           version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.13
+          python-version: "3.13"
 
       - name: Install docs dependencies
         run: |
@@ -65,7 +64,7 @@ jobs:
           uv pip install -e . -r requirements-docs.txt
 
       - name: Build documentation
-        run: uv run sphinx-build -b html docs docs/_build/html -W
+        run: uv run --no-sync sphinx-build -b html docs docs/_build/html -W
 
   test:
     name: test (${{ matrix.os }} - py${{ matrix.python-version }})
@@ -88,13 +87,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install uv
+      - name: Set up uv & Python ${{ matrix.python-version }}
         uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
           version: "latest"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Install test dependencies
         run: |
@@ -102,7 +99,7 @@ jobs:
           uv pip install -e . -r requirements-tests.txt
 
       - name: Run test suite with coverage
-        run: uv run pytest -v --cov=raxtik_etl --cov-report=xml --cov-report=term tests/
+        run: uv run --no-sync pytest -v --cov=raxtik_etl --cov-report=xml --cov-report=term tests/
 
       - name: Upload coverage report to Codecov
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
