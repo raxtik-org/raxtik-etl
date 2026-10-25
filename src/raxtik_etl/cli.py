@@ -1,5 +1,4 @@
-"""Typer CLI interface for raxtik-etl pipeline commands."""
-
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -7,13 +6,22 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from raxtik_etl.distribution.huggingface import DEFAULT_HF_REPO
+from raxtik_etl.distribution.huggingface import (
+    DEFAULT_HF_REPO,
+    DEFAULT_HTTP_TIMEOUT,
+    get_default_package_dir,
+)
 from raxtik_etl.longitudinal import (
     build_merged_longitudinal_package,
     get_longitudinal_summary_report,
 )
 from raxtik_etl.packaging.builder import PACKAGE_OUTPUT_DIR, build_quarterly_package
-from raxtik_etl.sdk import FAERS
+from raxtik_etl.sdk import Dataset
+from raxtik_etl.sources.registry import (
+    SourcePluginNotFoundError,
+    get_available_sources,
+    get_source_adapter,
+)
 
 app = typer.Typer(
     name="raxtik-etl",
@@ -21,7 +29,9 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
-CACHE_DIR = Path("data/raw/archives_cache")
+CACHE_DIR = Path(
+    os.environ.get("FAERS_CACHE_DIR", Path.home() / ".cache" / "raxtik" / "raw_archives")
+)
 
 
 def parse_quarter_range(start_quarter: str, end_quarter: str) -> List[str]:
@@ -55,26 +65,72 @@ def build_package_cmd(
         None, "--zip-path", "-z", help="Path to source archive/zip file"
     ),
     output_dir: Optional[Path] = typer.Option(
-        None, "--output-dir", "-o", help="Output package directory"
+        None,
+        "--output-dir",
+        "-o",
+        help="Output package directory (defaults to ~/.cache/raxtik/packages)",
+    ),
+    format: str = typer.Option(
+        "both", "--format", "-f", help="Output format: 'both', 'duckdb', or 'parquet'"
+    ),
+    delete_ascii: bool = typer.Option(
+        True,
+        "--delete-ascii/--no-delete-ascii",
+        help="Automatically delete raw downloaded ASCII files after packaging (default: True)",
     ),
 ):
-    """Build a standalone, self-describing Safety DuckDB and Parquet package."""
+    # 1. Resolve source connector dynamically from plugin registry
+    try:
+        adapter = get_source_adapter(source)
+    except SourcePluginNotFoundError as e:
+        console.print(f"[bold red]{e}[/bold red]")
+        raise typer.Exit(code=1)
+
     release_clean = release.upper()
     archive_file = zip_path or (CACHE_DIR / f"{release_clean.lower()}_ascii.zip")
 
     if not archive_file.exists():
-        console.print(f"[bold red]Source archive not found at {archive_file}.[/bold red]")
-        raise typer.Exit(code=1)
+        if hasattr(adapter, "fetch_archive"):
+            console.print(
+                f"[bold cyan]Raw archive not found locally. Fetching {release_clean} via [{adapter.source_name}] connector...[/bold cyan]"
+            )
+            try:
+                archive_file = adapter.fetch_archive(release=release_clean, dest_dir=CACHE_DIR)
+            except Exception as dl_err:
+                console.print(
+                    f"[bold red]Failed to download {release_clean} via [{adapter.source_name}] connector: {dl_err}[/bold red]"
+                )
+                raise typer.Exit(code=1)
+        else:
+            console.print(
+                f"[bold red]Source archive not found at {archive_file}, and connector '{adapter.source_name}' does not implement remote fetching.[/bold red]"
+            )
+            raise typer.Exit(code=1)
 
     res = build_quarterly_package(
         release=release_clean,
         zip_path=archive_file,
         source_name=source,
+        adapter=adapter,
         output_dir=output_dir,
+        format=format,
+        delete_ascii=delete_ascii,
     )
+    msg_lines = [
+        f"Release: [bold]{res['release']}[/bold]",
+        f"Signature: {res['signature_id']}",
+        f"Format: {res['format']}",
+    ]
+    if "duckdb_path" in res:
+        msg_lines.append(f"DuckDB: {res['duckdb_path']}")
+    if "parquet_dir" in res:
+        msg_lines.append(f"Parquet: {res['parquet_dir']}")
+    if "sha256" in res:
+        msg_lines.append(f"SHA-256: {res['sha256']}")
+
     console.print(
         Panel(
-            f"Release: [bold]{res['release']}[/bold]\nSignature: {res['signature_id']}\nDuckDB: {res['duckdb_path']}\nParquet: {res['parquet_dir']}",
+            "\n".join(msg_lines),
             title="Package Generated Successfully",
             style="green",
         )
@@ -87,28 +143,213 @@ def build_cohort_cmd(
     end: str = typer.Option("2006Q4", "--end", help="Ending quarter release (e.g. 2006Q4)"),
     source: str = typer.Option("faers", "--source", "-s", help="Source connector name"),
     output_dir: Optional[Path] = typer.Option(
-        None, "--output-dir", "-o", help="Output directory for packages"
+        None,
+        "--output-dir",
+        "-o",
+        help="Output directory for packages (defaults to ~/.cache/raxtik/packages)",
+    ),
+    format: str = typer.Option(
+        "both", "--format", "-f", help="Output format: 'both', 'duckdb', or 'parquet'"
+    ),
+    delete_ascii: bool = typer.Option(
+        True,
+        "--delete-ascii/--no-delete-ascii",
+        help="Automatically delete raw downloaded ASCII files after packaging (default: True)",
+    ),
+    upload: bool = typer.Option(
+        False,
+        "--upload",
+        help="Upload each package to Hugging Face Hub immediately after building",
+    ),
+    clean_local: bool = typer.Option(
+        False,
+        "--clean-local",
+        help="Delete local compiled package after uploading to prevent disk space exhaustion",
+    ),
+    repo_id: str = typer.Option(
+        DEFAULT_HF_REPO,
+        "--repo-id",
+        help="Hugging Face dataset repository (used when --upload is active)",
+    ),
+    tag: Optional[str] = typer.Option(
+        None,
+        "--tag",
+        help="Git tag to create on Hugging Face dataset after all packages are uploaded",
+    ),
+    token: Optional[str] = typer.Option(
+        None,
+        "--token",
+        "-t",
+        help="Hugging Face write token (defaults to HF_TOKEN env var)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite existing local files and re-build packages",
+    ),
+    batch_size_gb: float = typer.Option(
+        2.0,
+        "--batch-size-gb",
+        help="Target batch size in GB before committing to Hugging Face in one single commit (default: 2.0 GB)",
     ),
 ):
     """Batch build standalone packages for every quarter in the specified range."""
+    import shutil
+
+    try:
+        adapter = get_source_adapter(source)
+    except SourcePluginNotFoundError as e:
+        console.print(f"[bold red]{e}[/bold red]")
+        raise typer.Exit(code=1)
+
     quarters = parse_quarter_range(start, end)
     console.print(
         f"[bold cyan]Building {len(quarters)} quarterly packages ({quarters[0]} to {quarters[-1]})...[/bold cyan]"
     )
 
+    built_count = 0
+    target_pkg_dir = output_dir or get_default_package_dir()
+    import time
+
+    def _get_max_rss_mb() -> float:
+        import resource
+        import sys
+
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return (rss / (1024 * 1024)) if sys.platform == "darwin" else (rss / 1024)
+
+    batch_quarters: List[str] = []
+    batch_bytes = 0
+    max_batch_bytes = int(batch_size_gb * 1024 * 1024 * 1024)
+
+    def _flush_batch():
+        nonlocal batch_quarters, batch_bytes
+        if not batch_quarters:
+            return
+        if upload:
+            from raxtik_etl.distribution.huggingface import upload_package_to_hf
+
+            t_flush_start = time.perf_counter()
+            upload_package_to_hf(
+                release_or_name=batch_quarters,
+                package_dir=target_pkg_dir,
+                repo_id=repo_id,
+                source_name=source,
+                token=token,
+            )
+            t_flush = time.perf_counter() - t_flush_start
+            console.print(
+                f"[bold green]✓ Pushed bulk commit for {batch_quarters[0]}..{batch_quarters[-1]} "
+                f"({len(batch_quarters)} quarters, {batch_bytes / (1024 * 1024):.1f} MB) in {t_flush:.1f}s.[/bold green]"
+            )
+            if clean_local:
+                for q_done in batch_quarters:
+                    p_duck = target_pkg_dir / f"{source}_{q_done}.duckdb"
+                    p_parq = target_pkg_dir / f"{source}_{q_done}.parquet"
+                    p_duck.unlink(missing_ok=True)
+                    if p_parq.exists():
+                        shutil.rmtree(p_parq, ignore_errors=True)
+                console.print(
+                    f"[dim]✓ Cleaned local package files for {batch_quarters[0]}..{batch_quarters[-1]} to free disk space.[/dim]"
+                )
+        batch_quarters = []
+        batch_bytes = 0
+
     for q in quarters:
+        t_q_start = time.perf_counter()
+        t_dl, t_build = 0.0, 0.0
+
+        existing_duckdb = target_pkg_dir / f"{source}_{q}.duckdb"
+        existing_parquet = target_pkg_dir / f"{source}_{q}.parquet"
+        if (existing_duckdb.exists() or existing_parquet.exists()) and not force:
+            console.print(
+                f"[bold green]Package for {q} already compiled locally at {target_pkg_dir}[/bold green]"
+            )
+            built_count += 1
+            q_size = 0
+            if existing_duckdb.exists():
+                q_size += existing_duckdb.stat().st_size
+            if existing_parquet.exists():
+                for pf in existing_parquet.glob("*.parquet"):
+                    q_size += pf.stat().st_size
+            batch_quarters.append(q)
+            batch_bytes += q_size
+            if batch_bytes >= max_batch_bytes:
+                _flush_batch()
+            continue
+
         archive_file = CACHE_DIR / f"{q.lower()}_ascii.zip"
+        if force and archive_file.exists():
+            archive_file.unlink(missing_ok=True)
         if not archive_file.exists():
-            console.print(f"[bold red]Archive not found for {q}: {archive_file}[/bold red]")
-            raise typer.Exit(code=1)
+            if hasattr(adapter, "fetch_archive"):
+                console.print(
+                    f"[bold cyan]Fetching {q} via [{adapter.source_name}] connector...[/bold cyan]"
+                )
+                t_dl0 = time.perf_counter()
+                try:
+                    archive_file = adapter.fetch_archive(release=q, dest_dir=CACHE_DIR)
+                except Exception as dl_err:
+                    console.print(
+                        f"[yellow]Could not download {q} from source: {dl_err}. Skipping (not published yet).[/yellow]"
+                    )
+                    continue
+                t_dl = time.perf_counter() - t_dl0
+            else:
+                console.print(f"[bold red]Archive not found for {q}: {archive_file}[/bold red]")
+                continue
+
+        t_b0 = time.perf_counter()
         build_quarterly_package(
             release=q,
             zip_path=archive_file,
             source_name=source,
+            adapter=adapter,
             output_dir=output_dir,
+            format=format,
+            delete_ascii=delete_ascii,
+        )
+        t_build = time.perf_counter() - t_b0
+        built_count += 1
+
+        # Track package size in batch buffer
+        q_size = 0
+        p_duck = target_pkg_dir / f"{source}_{q}.duckdb"
+        p_parq = target_pkg_dir / f"{source}_{q}.parquet"
+        if p_duck.exists():
+            q_size += p_duck.stat().st_size
+        if p_parq.exists():
+            for pf in p_parq.glob("*.parquet"):
+                q_size += pf.stat().st_size
+
+        batch_quarters.append(q)
+        batch_bytes += q_size
+
+        t_total = time.perf_counter() - t_q_start
+        console.print(
+            f"[dim]Metrics for {q}: Download={t_dl:.1f}s | Build={t_build:.1f}s | "
+            f"Batch buffer={len(batch_quarters)} quarters ({batch_bytes / (1024 * 1024):.1f} MB / {batch_size_gb:.1f} GB) | "
+            f"Peak RSS={_get_max_rss_mb():.1f} MB | Total={t_total:.1f}s[/dim]"
         )
 
-    console.print(f"[bold green]✓ Successfully built all {len(quarters)} packages.[/bold green]")
+        if batch_bytes >= max_batch_bytes:
+            _flush_batch()
+
+    # Flush final remaining batch
+    _flush_batch()
+
+    if upload and tag and built_count > 0:
+        from raxtik_etl.distribution.huggingface import tag_hf_dataset
+
+        try:
+            tag_hf_dataset(repo_id=repo_id, tag=tag, token=token, force=force)
+        except Exception as e:
+            console.print(f"[bold yellow]Warning: could not create tag '{tag}': {e}[/bold yellow]")
+
+    console.print(
+        f"[bold green]✓ Successfully processed all {len(quarters)} packages.[/bold green]"
+    )
 
 
 @app.command("merge-cohort")
@@ -156,14 +397,15 @@ def inspect_package_cmd(
     release: str = typer.Option(
         "2004Q1", "--release", "-r", help="Quarter release identifier to inspect"
     ),
+    source: str = typer.Option("faers", "--source", "-s", help="Source identifier"),
     package_dir: Optional[Path] = typer.Option(
         None, "--package-dir", "-p", help="Directory containing package files"
     ),
 ):
     """Inspect and display metadata and data quality report for a compiled package."""
     try:
-        with FAERS(release=release, package_dir=package_dir) as faers:
-            faers.print_summary()
+        with Dataset(release=release, source=source, package_dir=package_dir) as ds:
+            ds.print_summary()
     except Exception as e:
         console.print(f"[bold red]Failed to inspect package:[/bold red] {e}")
         raise typer.Exit(code=1)
@@ -235,10 +477,21 @@ def hf_download_cmd(
         "--repo-id",
         help="Hugging Face dataset repository (defaults to RAXTIK_HF_REPO)",
     ),
-    dest_dir: Path = typer.Option(
-        Path("data/packages"), "--dest-dir", "-d", help="Destination folder"
+    dest_dir: Optional[Path] = typer.Option(
+        None, "--dest-dir", "-d", help="Destination folder (defaults to ~/.cache/raxtik/packages)"
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing local files"),
+    timeout: int = typer.Option(
+        DEFAULT_HTTP_TIMEOUT,
+        "--timeout",
+        "-t",
+        help="HTTP timeout in seconds (defaults to RAXTIK_HTTP_TIMEOUT or 120)",
+    ),
+    revision: Optional[str] = typer.Option(
+        None,
+        "--revision",
+        help="Git revision or tag on Hugging Face (defaults to package version tag or 'main')",
+    ),
 ):
     """Download a compiled FAERS package from Hugging Face Hub (zero auth required)."""
     from raxtik_etl.distribution.huggingface import download_package_from_hf
@@ -249,6 +502,8 @@ def hf_download_cmd(
             dest_dir=dest_dir,
             repo_id=repo_id,
             force=force,
+            timeout=timeout,
+            revision=revision,
         )
     except Exception as e:
         console.print(f"[bold red]Download failed:[/bold red] {e}")
@@ -257,19 +512,31 @@ def hf_download_cmd(
 
 @app.command("hf-upload")
 def hf_upload_cmd(
-    release: str = typer.Option(
-        "2004Q1",
+    release: Optional[str] = typer.Option(
+        None,
         "--release",
         "-r",
-        help="Release identifier (e.g. 2004Q1 or faers_2004_2006_merged)",
+        help="Single release (e.g. 2004Q1) or range (e.g. 2007Q1..2026Q1)",
+    ),
+    start: Optional[str] = typer.Option(
+        None, "--start", help="Starting quarter for batch upload (e.g. 2007Q1)"
+    ),
+    end: Optional[str] = typer.Option(
+        None, "--end", help="Ending quarter for batch upload (e.g. 2026Q1)"
+    ),
+    source: str = typer.Option(
+        "faers", "--source", "-s", help="Source name prefix (defaults to 'faers')"
     ),
     repo_id: str = typer.Option(
         DEFAULT_HF_REPO,
         "--repo-id",
         help="Hugging Face dataset repository (defaults to RAXTIK_HF_REPO)",
     ),
-    package_dir: Path = typer.Option(
-        Path("data/packages"), "--package-dir", "-p", help="Directory containing packages"
+    package_dir: Optional[Path] = typer.Option(
+        None,
+        "--package-dir",
+        "-p",
+        help="Directory containing packages (defaults to ~/.cache/raxtik/packages)",
     ),
     token: Optional[str] = typer.Option(
         None, "--token", "-t", help="Hugging Face write access token (defaults to HF_TOKEN env var)"
@@ -277,21 +544,98 @@ def hf_upload_cmd(
     parquet: bool = typer.Option(
         True, "--parquet/--no-parquet", help="Whether to include Parquet shards"
     ),
+    tag: Optional[str] = typer.Option(
+        None,
+        "--tag",
+        help="Git tag to create/attach on Hugging Face dataset (e.g. '0.1.0.dev' or 'v0.1.0')",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force overwrite existing tags and remote files on Hugging Face",
+    ),
 ):
-    """Upload a compiled FAERS package to Hugging Face Hub (requires write token)."""
-    from raxtik_etl.distribution.huggingface import upload_package_to_hf
+    """Upload compiled packages to Hugging Face Hub (supports single release or quarter range)."""
+    from raxtik_etl.distribution.huggingface import tag_hf_dataset, upload_package_to_hf
 
-    try:
-        upload_package_to_hf(
-            release_or_name=release,
-            package_dir=package_dir,
-            repo_id=repo_id,
-            token=token,
-            include_parquet=parquet,
+    if start and end:
+        quarters = parse_quarter_range(start, end)
+    elif release and (".." in release or ":" in release):
+        sep = ".." if ".." in release else ":"
+        parts = release.split(sep)
+        quarters = parse_quarter_range(parts[0], parts[1])
+    elif release:
+        quarters = [release.strip()]
+    else:
+        console.print(
+            "[bold red]Please specify either --release (e.g. 2004Q1 or 2007Q1..2026Q1) or --start and --end (e.g. --start 2007Q1 --end 2026Q1).[/bold red]"
         )
-    except Exception as e:
-        console.print(f"[bold red]Upload failed:[/bold red] {e}")
         raise typer.Exit(code=1)
+
+    console.print(
+        f"[bold cyan]Uploading {len(quarters)} package(s) to Hugging Face Hub ({repo_id})...[/bold cyan]"
+    )
+    success_count = 0
+    fail_count = 0
+
+    for q in quarters:
+        try:
+            upload_package_to_hf(
+                release_or_name=q,
+                package_dir=package_dir,
+                repo_id=repo_id,
+                source_name=source,
+                token=token,
+                include_parquet=parquet,
+                force=force,
+            )
+            success_count += 1
+        except FileNotFoundError as fnf:
+            console.print(f"[yellow]Skipping {q}: {fnf}[/yellow]")
+            fail_count += 1
+        except Exception as e:
+            console.print(f"[bold red]Failed uploading {q}:[/bold red] {e}")
+            fail_count += 1
+
+    if tag and success_count > 0:
+        try:
+            tag_hf_dataset(repo_id=repo_id, tag=tag, token=token, force=force)
+        except Exception as tag_err:
+            console.print(
+                f"[bold yellow]Warning: could not create tag '{tag}': {tag_err}[/bold yellow]"
+            )
+
+    if fail_count > 0:
+        console.print(
+            f"[bold yellow]Batch upload finished: {success_count} succeeded, {fail_count} skipped/failed.[/bold yellow]"
+        )
+    else:
+        console.print(
+            f"[bold green]✓ Successfully uploaded all {success_count} package(s) to Hugging Face Hub.[/bold green]"
+        )
+
+
+@app.command("list-sources")
+def list_sources_cmd():
+    """List all installed and discovered safety source connectors."""
+    from rich.table import Table
+
+    sources = get_available_sources()
+    if not sources:
+        console.print("[yellow]No source connectors installed in environment.[/yellow]")
+        return
+
+    table = Table(title="Installed Source Connectors", style="cyan")
+    table.add_column("Source Name", style="bold green")
+    table.add_column("Adapter Class", style="white")
+    table.add_column("Remote Fetching", style="magenta")
+
+    for name, cls in sources.items():
+        can_fetch = "Yes" if hasattr(cls, "fetch_archive") else "No"
+        table.add_row(name, f"{cls.__module__}.{cls.__name__}", can_fetch)
+
+    console.print(table)
 
 
 if __name__ == "__main__":

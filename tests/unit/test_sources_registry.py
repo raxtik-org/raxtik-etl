@@ -52,3 +52,11 @@ def test_plugin_not_found_raises_clean_error():
         SourcePluginNotFoundError, match="Source connector 'unknown_xyz' is not installed"
     ):
         get_source_adapter("unknown_xyz")
+
+
+def test_get_dataset_client_fallback():
+    """Verify get_dataset_client falls back to BaseDataset when no custom client registered."""
+    from raxtik_etl.sdk import BaseDataset, get_dataset_client
+
+    client_cls = get_dataset_client("unregistered_source")
+    assert client_cls is BaseDataset

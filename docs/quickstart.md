@@ -41,12 +41,22 @@ with FAERS("2004Q1") as faers:
 
 ### Auto-Downloading from Hugging Face Hub
 
-Users don't need to manually build packages; `FAERS.from_hf` streams precompiled packages directly from Hugging Face Hub (zero auth required):
+Users don't need to manually build packages; `Dataset.from_hf` streams precompiled packages directly from Hugging Face Hub (zero auth required):
 
 ```python
-from raxtik_etl import FAERS
+from raxtik_etl import Dataset
 
 # Automatically downloads from Hugging Face Hub if missing locally
+with Dataset.from_hf("2004Q1", source="faers") as ds:
+    df = ds.cases(limit=100)
+    print(f"Loaded {len(df)} cases.")
+```
+
+When using the [`raxtik-source-faers`](https://github.com/raxtik-org/raxtik-source-faers) plugin directly:
+
+```python
+from raxtik_source_faers import FAERS
+
 with FAERS.from_hf("2004Q1") as faers:
     df = faers.cases(limit=100)
     print(f"Loaded {len(df)} cases.")

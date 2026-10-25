@@ -6,16 +6,23 @@ This page provides the API reference for the `raxtik_etl` Python package.
 
 ## SDK Client
 
-### `raxtik_etl.FAERS`
+### `raxtik_etl.Dataset`
 
 ```{eval-rst}
-.. autoclass:: raxtik_etl.FAERS
+.. autoclass:: raxtik_etl.Dataset
    :members:
    :undoc-members:
    :show-inheritance:
 ```
 
----
+### `raxtik_etl.BaseDataset`
+
+```{eval-rst}
+.. autoclass:: raxtik_etl.BaseDataset
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
 
 ## Longitudinal & Deduplication Engine
 

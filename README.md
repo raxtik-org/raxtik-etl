@@ -84,13 +84,10 @@ Requires Python >= 3.11 (Python 3.13 recommended) and [`uv`](https://github.com/
 # Set local Python version
 pyenv local 3.13.5
 
-# Create virtual environment and install raxtik-etl
+# Create virtual environment and install raxtik-etl with FAERS plugin
 uv venv --python 3.13.5 .venv
 source .venv/bin/activate
-uv pip install -e ".[dev]"
-
-# Install the FDA FAERS source connector plugin
-uv pip install -e ../raxtik-source-faers
+uv pip install -e ".[dev,faers]"
 ```
 
 ### 2. Build a Quarterly Package via CLI
@@ -121,18 +118,18 @@ Displays package version, signature ID, fact record counts, and canonical data q
 
 ## 💻 Python SDK Usage
 
-Downstream applications can query packages using the high-performance `FAERS` client with zero-copy [Polars](https://pola.rs/) DataFrames:
+Downstream applications can query packages using the high-performance `Dataset` client with zero-copy [Polars](https://pola.rs/) DataFrames:
 
 ```python
-from raxtik_etl import FAERS
+from raxtik_etl import Dataset
 
-# Connect to the 2004Q1 compiled package
-with FAERS(release="2004Q1", package_dir="data/packages") as faers:
+# Stream precompiled package directly from Hugging Face Hub (zero auth required)
+with Dataset.from_hf("2004Q1", source="faers") as ds:
     # 1. Print self-describing metadata & data quality report
-    faers.print_summary()
+    ds.print_summary()
 
     # 2. Retrieve authoritative resolved cases
-    cases_df = faers.cases(limit=1000)
+    cases_df = ds.cases(limit=1000)
     print(
         cases_df.select(
             [
@@ -147,8 +144,17 @@ with FAERS(release="2004Q1", package_dir="data/packages") as faers:
     )
 
     # 3. Query primary suspect drugs and reactions
-    drugs_df = faers.drugs(primary_suspect_only=True)
-    reactions_df = faers.reactions()
+    drugs_df = ds.drugs(limit=100)
+    reactions_df = ds.reactions(limit=100)
+```
+
+Alternatively, when using [`raxtik-source-faers`](https://github.com/raxtik-org/raxtik-source-faers) directly:
+
+```python
+from raxtik_source_faers import FAERS
+
+with FAERS.from_hf("2004Q1") as faers:
+    cases_df = faers.cases(limit=1000)
 ```
 
 ---

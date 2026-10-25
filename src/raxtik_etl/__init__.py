@@ -1,6 +1,7 @@
-"""raxtik-etl: Versioned, reproducible FAERS data platform for high-performance analytics."""
+"""raxtik-etl: High-performance canonical pharmacovigilance data engine and packaging toolkit."""
 
-from raxtik_etl.sdk import FAERS
+from raxtik_etl.distribution import get_default_package_dir
+from raxtik_etl.sdk import BaseDataset, Dataset, get_dataset_client
 
 __version__ = "0.1.0.dev0"
-__all__ = ["FAERS", "__version__"]
+__all__ = ["BaseDataset", "Dataset", "get_dataset_client", "get_default_package_dir", "__version__"]

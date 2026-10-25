@@ -1,5 +1,5 @@
-"""DuckDB transformation engine for raxtik-etl."""
+"""Package metadata and data quality profiling subsystem."""
 
-from raxtik_etl.transformations.runner import run_transformations
+from raxtik_etl.transformations.metadata import populate_package_metadata
 
-__all__ = ["run_transformations"]
+__all__ = ["populate_package_metadata"]

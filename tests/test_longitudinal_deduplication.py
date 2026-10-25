@@ -1,7 +1,5 @@
 """Tests for Longitudinal Cohort Merger and Cross-Quarter Case Deduplication."""
 
-from pathlib import Path
-
 import duckdb
 import pytest
 
@@ -19,7 +17,9 @@ def test_parse_quarter_range():
 
 
 def test_merged_cohort_deduplication_integrity():
-    db_path = Path("data/packages/faers_2004_2006_merged.duckdb")
+    from raxtik_etl.distribution.huggingface import get_default_package_dir
+
+    db_path = get_default_package_dir() / "faers_2004_2006_merged.duckdb"
     if not db_path.exists():
         pytest.skip("Merged database not present on disk.")
 

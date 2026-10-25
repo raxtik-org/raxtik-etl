@@ -74,7 +74,7 @@ uv run --with pre-commit pre-commit run --all-files
 ---
 
 ## 🔍 Type Hint Checking
- 
+
 We enforce strict static type annotations. We use **Pyrefly** (Meta's Rust-powered type checker) for sub-second verification in both local development and CI:
 
 ```bash

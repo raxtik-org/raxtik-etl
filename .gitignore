@@ -38,9 +38,8 @@ htmlcov/
 # Documentation
 docs/_build/
 
-# dlt & local pipeline data
-.dlt/secrets.toml
-.dlt/*.duckdb
+# dlt
+.dlt/
 data/raw/*
 !data/raw/.gitkeep
 data/intermediate/*

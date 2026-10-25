@@ -72,15 +72,14 @@ def test_zero_regression_pipeline_via_entrypoint_discovery(tmp_path: Path):
     # 4. Zero-Regression Gate: Assert exact frozen baseline counts
     con = duckdb.connect(duckdb_path.as_posix(), read_only=True)
 
+    def _get_count(tbl: str) -> int:
+        row = con.execute(f"SELECT count(*) FROM {tbl}").fetchone()
+        assert row is not None
+        return int(row[0])
+
     counts = {
-        "demo": con.execute("SELECT count(*) FROM demo").fetchone()[0],
-        "cases": con.execute("SELECT count(*) FROM cases").fetchone()[0],
-        "drug": con.execute("SELECT count(*) FROM drug").fetchone()[0],
-        "reac": con.execute("SELECT count(*) FROM reac").fetchone()[0],
-        "outc": con.execute("SELECT count(*) FROM outc").fetchone()[0],
-        "indi": con.execute("SELECT count(*) FROM indi").fetchone()[0],
-        "ther": con.execute("SELECT count(*) FROM ther").fetchone()[0],
-        "rpsr": con.execute("SELECT count(*) FROM rpsr").fetchone()[0],
+        tbl: _get_count(tbl)
+        for tbl in ["demo", "cases", "drug", "reac", "outc", "indi", "ther", "rpsr"]
     }
 
     assert counts["demo"] == 65902, f"demo count mismatch: {counts['demo']}"

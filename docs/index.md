@@ -1,6 +1,6 @@
 # raxtik-etl Documentation
 
-**`raxtik-etl`** is an enterprise-grade pharmacovigilance data engine, canonical schema platform, and reproducible pipeline for FDA FAERS and AEMS adverse event safety databases.
+**`raxtik-etl`** is a high-performance canonical pharmacovigilance data engine and packaging toolkit powered by DuckDB and Polars.
 
 ---
 
@@ -52,11 +52,11 @@ changelog
 ## 🌟 Core Features
 
 - **Decoupled Architecture**: Source-agnostic canonical data engine separated from source-specific connectors (`raxtik-source-faers`).
-- **Signature Detection (S1 → S2 → S3)**: Fail-closed schema evolution tracking legacy ASCII (2004–2012), migration era (2012–2014), and modern FAERS/AEMS (2014–present).
-- **Dual Presentation Packaging**: Produces self-describing standalone SQLite, DuckDB, and zero-copy Apache Parquet formats.
-- **Cross-Quarter Case Deduplication Engine**: Deterministic longitudinal case resolution resolving follow-up submissions across quarters and years while preserving raw physical provenance.
-- **Zero-Copy Python SDK**: Query canonical cases, suspect drugs, reactions, and outcomes directly as Polars DataFrames.
-- **Hugging Face Hub Remote Distribution**: Instant public streaming download of precompiled packages without requiring local compilation or API tokens.
+- **Canonical Schemas**: 7 normalized entities (`demo`, `drug`, `reac`, `outc`, `indi`, `ther`, `rpsr`) preserving original verbatim values.
+- **Dual Presentation Packaging**: Produces self-describing standalone DuckDB databases and ZSTD-compressed Apache Parquet directories.
+- **Deterministic Case Deduplication**: Resolves multi-version follow-up submissions across quarters while retaining raw historical submissions.
+- **Zero-Copy Python Client**: Query cases, suspect drugs, and reactions directly as Polars DataFrames using `Dataset`.
+- **Hugging Face Hub Streaming**: Zero-auth public downloads of precompiled packages directly to user cache.
 
 ---
 

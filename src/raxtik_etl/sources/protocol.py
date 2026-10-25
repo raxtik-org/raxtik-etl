@@ -47,3 +47,7 @@ class SourceAdapter(Protocol):
     ) -> SourceLoadResult:
         """Extracts source artifact and loads records into canonical DuckDB tables."""
         ...
+
+    def fetch_archive(self, release: str, dest_dir: Path) -> Path:
+        """(Optional) Downloads or discovers the raw source archive for a given release."""
+        ...

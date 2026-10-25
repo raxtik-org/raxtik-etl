@@ -28,7 +28,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
 ]
 dependencies = [
-    "dlt[duckdb]>=1.0.0",
     "duckdb>=1.1.0",
     "polars>=1.0.0",
     "pyarrow>=14.0.0",

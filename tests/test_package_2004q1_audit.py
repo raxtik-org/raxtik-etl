@@ -13,12 +13,12 @@ Verifies:
 10. Clinical range and sanity checks (age bounds, seriousness categories)
 """
 
-from pathlib import Path
-
 import duckdb
 import pytest
 
-PACKAGE_DUCKDB = Path("data/packages/faers_2004Q1.duckdb")
+from raxtik_etl.distribution.huggingface import get_default_package_dir
+
+PACKAGE_DUCKDB = get_default_package_dir() / "faers_2004Q1.duckdb"
 
 
 @pytest.fixture(scope="module")
