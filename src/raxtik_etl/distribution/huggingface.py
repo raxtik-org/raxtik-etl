@@ -425,16 +425,14 @@ def tag_hf_dataset(
             "HF_TOKEN is required to tag the dataset. Please pass token=... or set the HF_TOKEN environment variable."
         )
     api = HfApi(token=auth_token)
-    if force:
-        try:
-            api.delete_tag(repo_id=repo_id, tag=tag, repo_type="dataset")
-        except Exception:
-            pass
+    try:
+        api.delete_tag(repo_id=repo_id, tag=tag, repo_type="dataset")
+    except Exception:
+        pass
     api.create_tag(
         repo_id=repo_id,
         tag=tag,
         repo_type="dataset",
         tag_message=f"Release {tag}",
-        exist_ok=True,
     )
     console.print(f"[bold green]✓ Tagged Hugging Face repository {repo_id} at '{tag}'[/bold green]")
