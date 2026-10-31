@@ -67,3 +67,6 @@ data/packages/*
 # Local Backlog
 TODO.md
 TODO*.md
+
+# Local Python Environment
+.python-version

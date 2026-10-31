@@ -7,6 +7,7 @@ under the group `raxtik_etl.sources`.
 from __future__ import annotations
 
 import sys
+from functools import lru_cache
 from typing import Dict, Type
 
 from raxtik_etl.sources.protocol import SourceAdapter
@@ -26,7 +27,11 @@ class SourcePluginNotFoundError(Exception):
 
 
 def get_available_sources() -> Dict[str, Type[SourceAdapter]]:
-    """Discovers all source connectors registered under `raxtik_etl.sources`."""
+    """Discovers all source connectors registered under `raxtik_etl.sources`.
+
+    Returns:
+        Mapping of connector name to connector class.
+    """
     discovered = {}
     eps = entry_points(group=ENTRY_POINT_GROUP)
     for ep in eps:
@@ -39,11 +44,15 @@ def get_available_sources() -> Dict[str, Type[SourceAdapter]]:
     return discovered
 
 
+@lru_cache(maxsize=16)
 def get_source_adapter(source_name: str) -> SourceAdapter:
-    """Returns an instance of the requested source adapter.
+    """Returns a cached singleton instance of the requested source adapter.
 
     Args:
         source_name: The registered name of the connector (e.g. 'faers').
+
+    Returns:
+        Instantiated SourceAdapter protocol implementation.
 
     Raises:
         SourcePluginNotFoundError: If connector is not registered in the environment.

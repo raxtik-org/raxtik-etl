@@ -60,3 +60,13 @@ def test_get_dataset_client_fallback():
 
     client_cls = get_dataset_client("unregistered_source")
     assert client_cls is BaseDataset
+
+
+def test_get_source_adapter_cached_singleton():
+    """Verify get_source_adapter returns cached singleton instance across repeated calls."""
+    sources = get_available_sources()
+    if "faers" not in sources:
+        pytest.skip("raxtik-source-faers connector is not installed in the environment.")
+    adapter1 = get_source_adapter("faers")
+    adapter2 = get_source_adapter("faers")
+    assert adapter1 is adapter2

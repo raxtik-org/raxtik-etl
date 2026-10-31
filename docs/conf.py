@@ -28,6 +28,9 @@ extensions = [
     "sphinx_autodoc_typehints",
 ]
 
+# Napoleon settings
+napoleon_use_ivar = True
+
 # Source file suffixes
 source_suffix = {
     ".rst": "restructuredtext",
@@ -76,3 +79,13 @@ autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
+
+# Nitpicky ignore for external C-extensions and third-party classes
+nitpick_ignore = [
+    ("py:class", "Path"),
+    ("py:class", "_duckdb.DuckDBPyConnection"),
+    ("py:class", "duckdb.DuckDBPyConnection"),
+    ("py:class", "polars.dataframe.frame.DataFrame"),
+    ("py:class", "rich.table.Table"),
+    ("py:class", "raxtik_etl.sources.protocol.SourceAdapter"),
+]

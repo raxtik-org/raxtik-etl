@@ -34,7 +34,7 @@ Maintainers and pipeline runners compiling raw archives install `raxtik-etl` alo
 ```bash
 raxtik-etl build-package \
     --source faers \
-    --release 2004Q1 \
+    --data-period 2004Q1 \
     --zip-path data/raw/archives_cache/2004q1_ascii.zip \
     --output-dir data/packages
 ```
@@ -50,12 +50,17 @@ Any source plugin implements `SourceAdapter`:
 
 ```python
 from pathlib import Path
+from typing import Any, Dict, List
 import duckdb
 from raxtik_etl.sources.protocol import SourceAdapter, SourceArtifact, SourceLoadResult
 
 
 class CustomSourceAdapter(SourceAdapter):
     source_name: str = "custom_pv"
+    supported_schema_versions: List[str] = ["1.0.0"]
+
+    def supports_schema(self, schema_version: str) -> bool:
+        return schema_version in self.supported_schema_versions
 
     def extract_and_load(
         self, con: duckdb.DuckDBPyConnection, artifact: SourceArtifact
@@ -63,6 +68,18 @@ class CustomSourceAdapter(SourceAdapter):
         # 1. Parse raw files from artifact.path
         # 2. Populate canonical tables in `con`: demo, drug, reac, outc, indi, ther, rpsr
         # 3. Return SourceLoadResult with row counts and provenance metadata
+        ...
+
+    def get_case_resolution_sql(self) -> str:
+        # Deduplication rule for unique cases
+        ...
+
+    def get_case_lineage_sql(self) -> str:
+        # Longitudinal submission history tracking
+        ...
+
+    def get_summary_views_sql(self) -> Dict[str, str]:
+        # Analytical views with non-fanout pre-aggregation
         ...
 ```
 
@@ -104,7 +121,25 @@ A single adverse event case may receive multiple follow-up submissions across qu
 
 ---
 
-## 5. Storage & Caching Layout
+## 5. Schema Migrations & Version Upgrades
+
+DuckDB packages include an internal ledger (`_schema_migrations` table) tracking applied revisions:
+
+- **`raxtik_etl.migrations.BaseMigration`**: Base class for linear schema migrations. Supports both **canonical migrations** (affecting all datasets) and **source-dependent migrations** (affecting only a specific source connector).
+- **`MigrationManager`**: Checks applied revisions and executes pending upgrades within transactions.
+
+---
+
+## 6. External Datasource Exporters & Connectors
+
+The `raxtik_etl.exporters` module provides extensible interfaces for exporting canonical DuckDB data into downstream environments:
+
+- **`BaseExporter`**: Abstract contract for exporting tables to external databases or formats (`export(con, destination, tables)`).
+- **Extensible Architecture**: Designed for frictionless expansion to SQLite, Parquet, Arrow, and remote relational warehouses.
+
+---
+
+## 7. Storage & Caching Layout
 
 ### Package Structure
 Each quarterly build creates two complementary presentation formats in the output directory:

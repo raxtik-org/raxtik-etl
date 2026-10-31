@@ -6,14 +6,14 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
+from raxtik_etl.consolidation import (
+    build_consolidated_package,
+    get_consolidation_summary_report,
+)
 from raxtik_etl.distribution.huggingface import (
     DEFAULT_HF_REPO,
     DEFAULT_HTTP_TIMEOUT,
     get_default_package_dir,
-)
-from raxtik_etl.longitudinal import (
-    build_merged_longitudinal_package,
-    get_longitudinal_summary_report,
 )
 from raxtik_etl.packaging.builder import PACKAGE_OUTPUT_DIR, build_quarterly_package
 from raxtik_etl.sdk import Dataset
@@ -35,7 +35,15 @@ CACHE_DIR = Path(
 
 
 def parse_quarter_range(start_quarter: str, end_quarter: str) -> List[str]:
-    """Generates an inclusive list of quarterly releases between start and end (e.g. '2004Q1' to '2006Q4')."""
+    """Generates an inclusive list of quarterly releases between start and end (e.g. '2004Q1' to '2006Q4').
+
+    Args:
+        start_quarter: Starting period identifier (e.g. '2004Q1').
+        end_quarter: Ending period identifier (e.g. '2006Q4').
+
+    Returns:
+        List of period identifier strings from start to end inclusive.
+    """
     start_clean = start_quarter.strip().upper()
     end_clean = end_quarter.strip().upper()
 
@@ -58,8 +66,8 @@ def build_package_cmd(
     source: str = typer.Option(
         "faers", "--source", "-s", help="Source connector name (e.g. faers)"
     ),
-    release: str = typer.Option(
-        "2004Q1", "--release", "-r", help="Quarter release identifier (e.g. 2004Q1)"
+    data_period: str = typer.Option(
+        "2004Q1", "--data-period", "-d", help="Quarterly data period identifier (e.g. 2004Q1)"
     ),
     zip_path: Optional[Path] = typer.Option(
         None, "--zip-path", "-z", help="Path to source archive/zip file"
@@ -78,7 +86,8 @@ def build_package_cmd(
         "--delete-ascii/--no-delete-ascii",
         help="Automatically delete raw downloaded ASCII files after packaging (default: True)",
     ),
-):
+) -> None:
+    """Builds a standalone DuckDB and/or Parquet package for a single quarterly release."""
     # 1. Resolve source connector dynamically from plugin registry
     try:
         adapter = get_source_adapter(source)
@@ -86,19 +95,19 @@ def build_package_cmd(
         console.print(f"[bold red]{e}[/bold red]")
         raise typer.Exit(code=1)
 
-    release_clean = release.upper()
-    archive_file = zip_path or (CACHE_DIR / f"{release_clean.lower()}_ascii.zip")
+    period_clean = data_period.upper().strip()
+    archive_file = zip_path or (CACHE_DIR / f"{period_clean.lower()}_ascii.zip")
 
     if not archive_file.exists():
         if hasattr(adapter, "fetch_archive"):
             console.print(
-                f"[bold cyan]Raw archive not found locally. Fetching {release_clean} via [{adapter.source_name}] connector...[/bold cyan]"
+                f"[bold cyan]Raw archive not found locally. Fetching {period_clean} via [{adapter.source_name}] connector...[/bold cyan]"
             )
             try:
-                archive_file = adapter.fetch_archive(release=release_clean, dest_dir=CACHE_DIR)
+                archive_file = adapter.fetch_archive(data_period=period_clean, dest_dir=CACHE_DIR)
             except Exception as dl_err:
                 console.print(
-                    f"[bold red]Failed to download {release_clean} via [{adapter.source_name}] connector: {dl_err}[/bold red]"
+                    f"[bold red]Failed to download {period_clean} via [{adapter.source_name}] connector: {dl_err}[/bold red]"
                 )
                 raise typer.Exit(code=1)
         else:
@@ -108,7 +117,7 @@ def build_package_cmd(
             raise typer.Exit(code=1)
 
     res = build_quarterly_package(
-        release=release_clean,
+        data_period=period_clean,
         zip_path=archive_file,
         source_name=source,
         adapter=adapter,
@@ -117,7 +126,7 @@ def build_package_cmd(
         delete_ascii=delete_ascii,
     )
     msg_lines = [
-        f"Release: [bold]{res['release']}[/bold]",
+        f"Data Period: [bold]{res['data_period']}[/bold]",
         f"Signature: {res['signature_id']}",
         f"Format: {res['format']}",
     ]
@@ -137,10 +146,10 @@ def build_package_cmd(
     )
 
 
-@app.command("build-cohort")
-def build_cohort_cmd(
-    start: str = typer.Option("2004Q1", "--start", help="Starting quarter release (e.g. 2004Q1)"),
-    end: str = typer.Option("2006Q4", "--end", help="Ending quarter release (e.g. 2006Q4)"),
+@app.command("batch-build")
+def batch_build_cmd(
+    start: str = typer.Option("2004Q1", "--start", help="Starting data period (e.g. 2004Q1)"),
+    end: str = typer.Option("2006Q4", "--end", help="Ending data period (e.g. 2006Q4)"),
     source: str = typer.Option("faers", "--source", "-s", help="Source connector name"),
     output_dir: Optional[Path] = typer.Option(
         None,
@@ -232,7 +241,7 @@ def build_cohort_cmd(
 
             t_flush_start = time.perf_counter()
             upload_package_to_hf(
-                release_or_name=batch_quarters,
+                data_period_or_name=batch_quarters,
                 package_dir=target_pkg_dir,
                 repo_id=repo_id,
                 source_name=source,
@@ -289,7 +298,7 @@ def build_cohort_cmd(
                 )
                 t_dl0 = time.perf_counter()
                 try:
-                    archive_file = adapter.fetch_archive(release=q, dest_dir=CACHE_DIR)
+                    archive_file = adapter.fetch_archive(data_period=q, dest_dir=CACHE_DIR)
                 except Exception as dl_err:
                     console.print(
                         f"[yellow]Could not download {q} from source: {dl_err}. Skipping (not published yet).[/yellow]"
@@ -302,7 +311,7 @@ def build_cohort_cmd(
 
         t_b0 = time.perf_counter()
         build_quarterly_package(
-            release=q,
+            data_period=q,
             zip_path=archive_file,
             source_name=source,
             adapter=adapter,
@@ -352,41 +361,41 @@ def build_cohort_cmd(
     )
 
 
-@app.command("merge-cohort")
-def merge_cohort_cmd(
-    start: str = typer.Option("2004Q1", "--start", help="Starting quarter release (e.g. 2004Q1)"),
-    end: str = typer.Option("2006Q4", "--end", help="Ending quarter release (e.g. 2006Q4)"),
+@app.command("consolidate")
+def consolidate_cmd(
+    start: str = typer.Option("2004Q1", "--start", help="Starting period release (e.g. 2004Q1)"),
+    end: str = typer.Option("2006Q4", "--end", help="Ending period release (e.g. 2006Q4)"),
     package_dir: Optional[Path] = typer.Option(
-        None, "--package-dir", "-p", help="Directory containing quarterly packages"
+        None, "--package-dir", "-p", help="Directory containing individual packages"
     ),
     output_name: Optional[str] = typer.Option(
         None,
         "--output-name",
         "-n",
-        help="Merged output name (defaults to faers_{start}_{end}_merged)",
+        help="Consolidated output name (defaults to faers_{start}_{end}_consolidated)",
     ),
     output_dir: Optional[Path] = typer.Option(
-        None, "--output-dir", "-o", help="Destination folder for merged package"
+        None, "--output-dir", "-o", help="Destination folder for consolidated package"
     ),
-):
-    """Merge quarterly packages into a consolidated longitudinal dataset with cross-quarter deduplication."""
+) -> None:
+    """Consolidate multiple partition packages into a unified dataset with cross-period deduplication."""
     quarters = parse_quarter_range(start, end)
-    resolved_output_name = output_name or f"faers_{start}_{end}_merged".lower()
-    res = build_merged_longitudinal_package(
-        releases=quarters,
+    resolved_output_name = output_name or f"faers_{start}_{end}_consolidated".lower()
+    res = build_consolidated_package(
+        data_periods=quarters,
         package_dir=package_dir,
         output_name=resolved_output_name,
         output_dir=output_dir,
     )
     console.print(
         Panel(
-            f"Merged Database: [bold]{res['output_duckdb']}[/bold]\n"
-            f"Merged Parquet: [bold]{res['output_parquet']}[/bold]\n"
+            f"Consolidated Database: [bold]{res['output_duckdb']}[/bold]\n"
+            f"Consolidated Parquet: [bold]{res['output_parquet']}[/bold]\n"
             f"Total Submissions: [cyan]{res['metrics'].get('total_raw_submissions')}[/cyan]\n"
             f"Deduplicated Unique Cases: [green]{res['metrics'].get('total_unique_cases')}[/green]\n"
             f"Cross-Quarter Cases: [yellow]{res['metrics'].get('cases_spanning_multiple_quarters')}[/yellow]\n"
             f"Duplicates Removed: [magenta]{res['metrics'].get('deduplicated_duplicate_reports_removed')} ({res['metrics'].get('deduplication_reduction_pct')})[/magenta]",
-            title="Longitudinal Cohort Merged & Deduplicated",
+            title="Multi-Period Package Consolidated & Deduplicated",
             style="green",
         )
     )
@@ -394,36 +403,39 @@ def merge_cohort_cmd(
 
 @app.command("inspect-package")
 def inspect_package_cmd(
-    release: str = typer.Option(
-        "2004Q1", "--release", "-r", help="Quarter release identifier to inspect"
+    data_period: str = typer.Option(
+        "2004Q1",
+        "--data-period",
+        "-d",
+        help="Quarterly data period identifier to inspect (e.g. 2004Q1)",
     ),
     source: str = typer.Option("faers", "--source", "-s", help="Source identifier"),
     package_dir: Optional[Path] = typer.Option(
         None, "--package-dir", "-p", help="Directory containing package files"
     ),
-):
+) -> None:
     """Inspect and display metadata and data quality report for a compiled package."""
     try:
-        with Dataset(release=release, source=source, package_dir=package_dir) as ds:
+        with Dataset(data_period=data_period, source=source, package_dir=package_dir) as ds:
             ds.print_summary()
     except Exception as e:
         console.print(f"[bold red]Failed to inspect package:[/bold red] {e}")
         raise typer.Exit(code=1)
 
 
-@app.command("inspect-cohort")
-def inspect_cohort_cmd(
-    cohort: Optional[str] = typer.Option(
+@app.command("inspect-consolidation")
+def inspect_consolidation_cmd(
+    name: Optional[str] = typer.Option(
         None,
-        "--cohort",
-        "-c",
-        help="Cohort name or identifier (e.g. 'faers_2004_2006_merged' or '2004_2006')",
+        "--name",
+        "-n",
+        help="Consolidated package name (e.g. 'faers_2004_2006_consolidated' or '2004_2006')",
     ),
     db_path: Optional[Path] = typer.Option(
         None,
         "--db-path",
         "-d",
-        help="Direct path to merged DuckDB package file",
+        help="Direct path to consolidated DuckDB package file",
     ),
     package_dir: Optional[Path] = typer.Option(
         None,
@@ -432,45 +444,47 @@ def inspect_cohort_cmd(
         help="Directory containing packages (defaults to data/packages or RAXTIK_PACKAGE_DIR)",
     ),
 ):
-    """Inspect and display metrics for a merged longitudinal cohort package."""
+    """Inspect and display metrics for a consolidated multi-period package."""
     base_dir = package_dir or PACKAGE_OUTPUT_DIR
     target_path: Optional[Path] = None
 
     if db_path is not None:
         target_path = db_path
-    elif cohort is not None:
-        filename = cohort if cohort.endswith(".duckdb") else f"{cohort}.duckdb"
+    elif name is not None:
+        filename = name if name.endswith(".duckdb") else f"{name}.duckdb"
         if not filename.startswith("faers_") and not filename.startswith("/"):
             filename = f"faers_{filename}"
         candidate = base_dir / filename
-        if not candidate.exists() and not filename.endswith("_merged.duckdb"):
-            merged_candidate = base_dir / filename.replace(".duckdb", "_merged.duckdb")
+        if not candidate.exists() and not filename.endswith("_consolidated.duckdb"):
+            merged_candidate = base_dir / filename.replace(".duckdb", "_consolidated.duckdb")
             if merged_candidate.exists():
                 candidate = merged_candidate
         target_path = candidate
     else:
-        # Default fallback: check for existing merged package
-        default_2004_2006 = base_dir / "faers_2004_2006_merged.duckdb"
+        # Default fallback: check for existing consolidated package
+        default_2004_2006 = base_dir / "faers_2004_2006_consolidated.duckdb"
         if default_2004_2006.exists():
             target_path = default_2004_2006
         else:
-            merged_files = sorted(base_dir.glob("*merged*.duckdb"))
+            merged_files = sorted(base_dir.glob("*consolidated*.duckdb"))
             target_path = merged_files[0] if merged_files else default_2004_2006
 
     if not target_path.exists():
         console.print(f"[bold red]Database not found at {target_path}[/bold red]")
         raise typer.Exit(code=1)
-    report_table = get_longitudinal_summary_report(target_path)
+    report_table = get_consolidation_summary_report(target_path)
     console.print(report_table)
 
 
 @app.command("hf-download")
 def hf_download_cmd(
-    release: str = typer.Option(
+    data_period_or_name: str = typer.Option(
         "2004Q1",
-        "--release",
-        "-r",
-        help="Release identifier (e.g. 2004Q1 or faers_2004_2006_merged)",
+        "--name",
+        "-n",
+        "--data-period",
+        "-d",
+        help="Data period identifier or package name (e.g. 2004Q1 or faers_2004_2006_consolidated)",
     ),
     repo_id: str = typer.Option(
         DEFAULT_HF_REPO,
@@ -478,7 +492,7 @@ def hf_download_cmd(
         help="Hugging Face dataset repository (defaults to RAXTIK_HF_REPO)",
     ),
     dest_dir: Optional[Path] = typer.Option(
-        None, "--dest-dir", "-d", help="Destination folder (defaults to ~/.cache/raxtik/packages)"
+        None, "--dest-dir", help="Destination folder (defaults to ~/.cache/raxtik/packages)"
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing local files"),
     timeout: int = typer.Option(
@@ -492,13 +506,13 @@ def hf_download_cmd(
         "--revision",
         help="Git revision or tag on Hugging Face (defaults to package version tag or 'main')",
     ),
-):
+) -> None:
     """Download a compiled FAERS package from Hugging Face Hub (zero auth required)."""
     from raxtik_etl.distribution.huggingface import download_package_from_hf
 
     try:
         download_package_from_hf(
-            release_or_name=release,
+            data_period_or_name=data_period_or_name,
             dest_dir=dest_dir,
             repo_id=repo_id,
             force=force,
@@ -512,11 +526,11 @@ def hf_download_cmd(
 
 @app.command("hf-upload")
 def hf_upload_cmd(
-    release: Optional[str] = typer.Option(
+    data_period: Optional[str] = typer.Option(
         None,
-        "--release",
-        "-r",
-        help="Single release (e.g. 2004Q1) or range (e.g. 2007Q1..2026Q1)",
+        "--data-period",
+        "-d",
+        help="Single data period (e.g. 2004Q1) or range (e.g. 2007Q1..2026Q1)",
     ),
     start: Optional[str] = typer.Option(
         None, "--start", help="Starting quarter for batch upload (e.g. 2007Q1)"
@@ -547,7 +561,7 @@ def hf_upload_cmd(
     tag: Optional[str] = typer.Option(
         None,
         "--tag",
-        help="Git tag to create/attach on Hugging Face dataset (e.g. '0.1.0.dev' or 'v0.1.0')",
+        help="Git tag to create/attach on Hugging Face dataset (e.g. '0.1.0.dev1' or 'v0.1.0')",
     ),
     force: bool = typer.Option(
         False,
@@ -555,21 +569,21 @@ def hf_upload_cmd(
         "-f",
         help="Force overwrite existing tags and remote files on Hugging Face",
     ),
-):
-    """Upload compiled packages to Hugging Face Hub (supports single release or quarter range)."""
+) -> None:
+    """Upload compiled packages to Hugging Face Hub (supports single data period or quarter range)."""
     from raxtik_etl.distribution.huggingface import tag_hf_dataset, upload_package_to_hf
 
     if start and end:
         quarters = parse_quarter_range(start, end)
-    elif release and (".." in release or ":" in release):
-        sep = ".." if ".." in release else ":"
-        parts = release.split(sep)
+    elif data_period and (".." in data_period or ":" in data_period):
+        sep = ".." if ".." in data_period else ":"
+        parts = data_period.split(sep)
         quarters = parse_quarter_range(parts[0], parts[1])
-    elif release:
-        quarters = [release.strip()]
+    elif data_period:
+        quarters = [data_period.strip()]
     else:
         console.print(
-            "[bold red]Please specify either --release (e.g. 2004Q1 or 2007Q1..2026Q1) or --start and --end (e.g. --start 2007Q1 --end 2026Q1).[/bold red]"
+            "[bold red]Please specify either --data-period (e.g. 2004Q1 or 2007Q1..2026Q1) or --start and --end (e.g. --start 2007Q1 --end 2026Q1).[/bold red]"
         )
         raise typer.Exit(code=1)
 
@@ -582,7 +596,7 @@ def hf_upload_cmd(
     for q in quarters:
         try:
             upload_package_to_hf(
-                release_or_name=q,
+                data_period_or_name=q,
                 package_dir=package_dir,
                 repo_id=repo_id,
                 source_name=source,
@@ -617,7 +631,7 @@ def hf_upload_cmd(
 
 
 @app.command("list-sources")
-def list_sources_cmd():
+def list_sources_cmd() -> None:
     """List all installed and discovered safety source connectors."""
     from rich.table import Table
 

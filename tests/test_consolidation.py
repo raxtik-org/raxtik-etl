@@ -4,7 +4,7 @@ import duckdb
 import pytest
 
 from raxtik_etl.cli import parse_quarter_range
-from raxtik_etl.longitudinal.merger import get_longitudinal_summary_report
+from raxtik_etl.consolidation import get_consolidation_summary_report
 
 
 def test_parse_quarter_range():
@@ -19,9 +19,9 @@ def test_parse_quarter_range():
 def test_merged_cohort_deduplication_integrity():
     from raxtik_etl.distribution.huggingface import get_default_package_dir
 
-    db_path = get_default_package_dir() / "faers_2004_2006_merged.duckdb"
+    db_path = get_default_package_dir() / "faers_2004_2006_consolidated.duckdb"
     if not db_path.exists():
-        pytest.skip("Merged database not present on disk.")
+        pytest.skip("Consolidated database not present on disk.")
 
     con = duckdb.connect(db_path.as_posix(), read_only=True)
     try:
@@ -48,7 +48,7 @@ def test_merged_cohort_deduplication_integrity():
         assert len(sample_summary) == 5
 
         # 5. Verify quality report table
-        summary_table = get_longitudinal_summary_report(db_path)
+        summary_table = get_consolidation_summary_report(db_path)
         assert summary_table is not None
     finally:
         con.close()

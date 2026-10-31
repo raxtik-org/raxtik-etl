@@ -24,12 +24,12 @@ This page provides the API reference for the `raxtik_etl` Python package.
    :show-inheritance:
 ```
 
-## Longitudinal & Deduplication Engine
+## Consolidation & Deduplication Engine
 
-### `raxtik_etl.longitudinal.merger`
+### `raxtik_etl.consolidation.merger`
 
 ```{eval-rst}
-.. automodule:: raxtik_etl.longitudinal.merger
+.. automodule:: raxtik_etl.consolidation.merger
    :members:
    :undoc-members:
    :show-inheritance:
@@ -56,6 +56,32 @@ This page provides the API reference for the `raxtik_etl` Python package.
 
 ```{eval-rst}
 .. automodule:: raxtik_etl.distribution.huggingface
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
+---
+
+## Schema Migrations
+
+### `raxtik_etl.migrations`
+
+```{eval-rst}
+.. automodule:: raxtik_etl.migrations
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
+---
+
+## Exporters & Connectors
+
+### `raxtik_etl.exporters`
+
+```{eval-rst}
+.. automodule:: raxtik_etl.exporters
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,6 +1,7 @@
 """Tests for Package Builder format options, ASCII cleanup flag, and SHA-256 verification."""
 
 from pathlib import Path
+from typing import List
 
 import duckdb
 import pytest
@@ -15,6 +16,12 @@ from raxtik_etl.sources.protocol import SourceAdapter, SourceArtifact, SourceLoa
 
 class MockAdapter(SourceAdapter):
     source_name: str = "mock"
+    etl_version: str = "1.0.0"
+    source_version: str = "0.1.0"
+    supported_schema_versions: List[str] = ["1.0.0"]
+
+    def supports_schema(self, schema_version: str) -> bool:
+        return schema_version in self.supported_schema_versions
 
     def extract_and_load(
         self, con: duckdb.DuckDBPyConnection, artifact: SourceArtifact
@@ -24,7 +31,7 @@ class MockAdapter(SourceAdapter):
                 primary_id VARCHAR,
                 case_id VARCHAR,
                 canonical_case_version INTEGER,
-                fda_date VARCHAR,
+                regulatory_date VARCHAR,
                 manufacturer_date VARCHAR,
                 event_date VARCHAR,
                 standard_age_years DOUBLE,
@@ -70,12 +77,23 @@ class MockAdapter(SourceAdapter):
 
         return SourceLoadResult(
             source_name=self.source_name,
-            release=artifact.release or "2024Q1",
+            data_period=artifact.data_period or "2024Q1",
             signature_id="S1",
             source_files=[],
             reference_tables={},
             row_counts={tbl: 1 for tbl in ["demo", "drug", "reac", "outc", "indi", "ther", "rpsr"]},
         )
+
+    def get_case_resolution_sql(self) -> str:
+        return "CREATE OR REPLACE VIEW cases AS SELECT * FROM demo;"
+
+    def get_case_lineage_sql(self) -> str:
+        return "CREATE OR REPLACE TABLE case_lineage AS SELECT case_id, 1 AS total_submissions_count, 1 AS quarters_count, '2024Q1' AS first_release, '2024Q1' AS latest_release, '2004-01-01' AS first_regulatory_date, '2004-01-01' AS latest_regulatory_date, 1 AS min_case_version, 1 AS max_case_version, FALSE AS has_followup, FALSE AS is_cross_quarter_case, primary_id AS initial_primary_id, primary_id AS latest_primary_id FROM demo;"
+
+    def get_summary_views_sql(self) -> dict[str, str]:
+        return {
+            "case_adverse_events_summary": "CREATE OR REPLACE VIEW case_adverse_events_summary AS SELECT case_id, primary_id FROM demo;"
+        }
 
 
 def test_compute_sha256(tmp_path: Path):
@@ -92,7 +110,7 @@ def test_builder_format_duckdb_only(tmp_path: Path):
 
     out_dir = tmp_path / "packages"
     res = build_quarterly_package(
-        release="2024Q1",
+        data_period="2024Q1",
         zip_path=dummy_zip,
         source_name="mock",
         adapter=MockAdapter(),
@@ -117,7 +135,7 @@ def test_builder_format_parquet_only(tmp_path: Path):
 
     out_dir = tmp_path / "packages"
     res = build_quarterly_package(
-        release="2024Q1",
+        data_period="2024Q1",
         zip_path=dummy_zip,
         source_name="mock",
         adapter=MockAdapter(),
@@ -139,7 +157,7 @@ def test_builder_format_both_and_cleanup(tmp_path: Path):
 
     out_dir = tmp_path / "packages"
     res = build_quarterly_package(
-        release="2024Q1",
+        data_period="2024Q1",
         zip_path=dummy_zip,
         source_name="mock",
         adapter=MockAdapter(),
@@ -162,7 +180,7 @@ def test_builder_invalid_format(tmp_path: Path):
 
     with pytest.raises(ValueError, match="Invalid format"):
         build_quarterly_package(
-            release="2024Q1",
+            data_period="2024Q1",
             zip_path=dummy_zip,
             source_name="mock",
             adapter=MockAdapter(),
@@ -199,3 +217,36 @@ def test_sha256_verification_sdk(tmp_path: Path):
     ds2 = BaseDataset(release="2024Q1", source="mock", package_dir=tmp_path)
     assert ds2.verify_checksum() is True
     ds2.close()
+
+
+def test_metadata_records_source_and_engine_versions(tmp_path: Path):
+    from raxtik_etl import __version__ as core_version
+
+    dummy_zip = tmp_path / "mock_2024q1.zip"
+    dummy_zip.write_bytes(b"content")
+
+    out_dir = tmp_path / "packages"
+    res = build_quarterly_package(
+        data_period="2024Q1",
+        zip_path=dummy_zip,
+        source_name="mock",
+        adapter=MockAdapter(),
+        output_dir=out_dir,
+        format="duckdb",
+        delete_ascii=False,
+    )
+
+    db_path = res["duckdb_path"]
+    con = duckdb.connect(db_path, read_only=True)
+    meta = dict(con.execute("SELECT key, value FROM _metadata").fetchall())
+    migrations = con.execute("SELECT migration_id, version FROM _schema_migrations").fetchall()
+    con.close()
+
+    assert meta["source_name"] == "mock"
+    assert meta["source_version"] == "0.1.0"
+    assert meta["etl_version"] == "1.0.0"
+    assert meta["canonical_schema_version"] == "1.0.0"
+    assert meta["engine_version"] == core_version
+    assert len(migrations) >= 1
+    assert migrations[0][0] == "M001_INITIAL_CANONICAL"
+    assert migrations[0][1] == "1.0.0"

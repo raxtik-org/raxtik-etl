@@ -14,36 +14,68 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import duckdb
 
-from raxtik_etl.reference import (
-    FDA_DECHALLENGE_REFERENCE,
-    FDA_OCCUPATIONS_REFERENCE,
-    FDA_OUTCOMES_REFERENCE,
-    FDA_RECHALLENGE_REFERENCE,
-    FDA_REPORT_SOURCES_REFERENCE,
-    FDA_ROLES_REFERENCE,
-    RAXTIK_OUTCOME_SEMANTICS,
-)
+from raxtik_etl import __version__
+from raxtik_etl.reference import RAXTIK_OUTCOME_SEMANTICS
 from raxtik_etl.schema.registry import (
     CANONICAL_SCHEMA_VERSION,
-    CASE_RESOLUTION_VERSION,
-    PACKAGE_FORMAT_VERSION,
-    REFERENCE_DATA_VERSION,
     SCHEMA_REGISTRY,
 )
 
 
 def populate_package_metadata(
     con: duckdb.DuckDBPyConnection,
-    release: str,
+    data_period: str,
     signature_id: str,
     source_zip_path: Path,
-    etl_version: str = "0.1.0",
-):
-    """Creates and populates all internal metadata and reference code lookup tables in DuckDB."""
+    etl_version: Optional[str] = None,
+    engine_version: Optional[str] = None,
+    source_name: Optional[str] = None,
+    source_version: Optional[str] = None,
+    reference_tables: Optional[Dict[str, List[Any]]] = None,
+    package_format_version: str = "1.0.0",
+) -> None:
+    """Creates and populates all internal metadata and reference code lookup tables in DuckDB.
+
+    Installs the following internal diagnostic and contract tables:
+    1. `_metadata`: Key-value manifest documenting package format version, canonical schema version,
+       source versions, dataset licensing, and compilation timestamps.
+    2. `_schema_registry`: Physical catalog registering all canonical entities, field definitions, data types,
+       nullability constraints, origin classifications, and schema evolution categories.
+    3. `_migrations`: Audit journal tracking applied schema evolution migrations.
+    4. `_provenance`: High-level data lineage documenting upstream extract source files, signatures, and timestamps.
+    5. `_data_quality_report`: Summary metrics capturing total records, deduplicated counts, and validation checks.
+    6. `_source_files`: Inventory of raw archive files, byte sizes, and cryptographic SHA-256 digests.
+    7. Reference lookup tables (`_code_*`) dynamically installed from the source adapter.
+    8. `_code_outcome_semantics`: Universal clinical seriousness and severity hierarchy based on ICH E2B.
+
+    Args:
+        con: Active DuckDB database connection.
+        data_period: Temporal coverage period identifier (e.g. '2004Q1').
+        signature_id: Upstream physical extract header signature identifier (e.g. 'S1', 'S2', 'S3').
+        source_zip_path: Filesystem path to the raw source archive zip file.
+        etl_version: Transformation/pipeline logic version of the source adapter.
+        engine_version: Software version of the raxtik-etl packaging engine.
+        source_name: Identifier of the source connector (e.g. 'faers').
+        source_version: Upstream connector library release version.
+        reference_tables: Mapping of reference table names to codelist dataclass entries provided by the adapter.
+        package_format_version: Version specification of the Raxtik package container format.
+
+    Returns:
+        None
+    """
+    actual_period = data_period.upper().strip()
+    actual_engine_version = engine_version or __version__
+    actual_etl_version = etl_version or CANONICAL_SCHEMA_VERSION
+    actual_source_name = source_name or "faers"
+    dataset_name = (
+        "FDA_FAERS_AEMS"
+        if actual_source_name.lower() == "faers"
+        else f"{actual_source_name.upper()}_AEMS"
+    )
 
     # 1. _metadata (Machine-readable Package Contract & Lineage)
     con.execute("""
@@ -54,31 +86,36 @@ def populate_package_metadata(
         );
     """)
     metadata_entries = [
-        ("dataset_name", "FDA_FAERS_AEMS", "FDA Adverse Event Reporting System Data Distribution"),
-        ("release_quarter", release, "Quarterly extract release identifier"),
+        ("dataset_name", dataset_name, "Adverse Event Reporting System Data Distribution"),
+        ("data_period", actual_period, "Temporal extract period identifier"),
         (
             "package_format_version",
-            PACKAGE_FORMAT_VERSION,
+            package_format_version,
             "Raxtik Package Container Format Specification Version",
         ),
-        ("source_schema_signature", signature_id, "Physical extract header signature (S1, S2, S3)"),
+        ("source_name", actual_source_name, "Source data connector identifier"),
+        (
+            "source_version",
+            source_version or "unknown",
+            "Connector software library release version",
+        ),
+        ("source_schema_signature", signature_id, "Physical extract header signature"),
         ("canonical_schema_version", CANONICAL_SCHEMA_VERSION, "Raxtik Canonical Schema Version"),
         (
-            "case_resolution_version",
-            CASE_RESOLUTION_VERSION,
-            "Latest Case Resolution Logic Version",
+            "etl_version",
+            actual_etl_version,
+            "Transformation and pipeline logic version of data source",
         ),
         (
-            "reference_data_version",
-            REFERENCE_DATA_VERSION,
-            "Version of embedded FDA reference dictionaries",
+            "engine_version",
+            actual_engine_version,
+            "Software version of raxtik-etl packaging engine",
         ),
-        ("etl_version", etl_version, "Software version of raxtik-etl pipeline"),
         ("built_at", datetime.now(timezone.utc).isoformat(), "Timestamp package was compiled"),
         (
             "source_data_license",
             "US Government Work / Public Domain (17 U.S.C. § 105)",
-            "License of raw FDA adverse event observations",
+            "License of raw adverse event observations",
         ),
         (
             "package_license",
@@ -98,10 +135,10 @@ def populate_package_metadata(
             is_nullable BOOLEAN,
             value_origin VARCHAR,
             category VARCHAR,
-            s1_source_field VARCHAR,
-            s2_source_field VARCHAR,
-            s3_source_field VARCHAR,
-            description VARCHAR
+            description VARCHAR,
+            is_primary_key BOOLEAN,
+            foreign_key VARCHAR,
+            PRIMARY KEY (entity, field_name)
         );
     """)
     registry_rows = [
@@ -112,15 +149,14 @@ def populate_package_metadata(
             e.is_nullable,
             e.value_origin.value,
             e.category.value,
-            e.s1_source_field,
-            e.s2_source_field,
-            e.s3_source_field,
             e.description,
+            e.is_primary_key,
+            e.foreign_key,
         )
         for e in SCHEMA_REGISTRY
     ]
     con.executemany(
-        "INSERT INTO _schema_registry VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", registry_rows
+        "INSERT INTO _schema_registry VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);", registry_rows
     )
 
     # 3. _schema_migrations
@@ -129,7 +165,8 @@ def populate_package_metadata(
             migration_id VARCHAR PRIMARY KEY,
             version VARCHAR,
             applied_at VARCHAR,
-            description VARCHAR
+            description VARCHAR,
+            source_name VARCHAR
         );
     """)
     con.execute(f"""
@@ -137,12 +174,13 @@ def populate_package_metadata(
             'M001_INITIAL_CANONICAL',
             '{CANONICAL_SCHEMA_VERSION}',
             '{datetime.now(timezone.utc).isoformat()}',
-            'Initial canonical 7-table schema with dual presentation (reports/cases)'
+            'Initial canonical 7-table schema with dual presentation (reports/cases)',
+            '{actual_source_name}'
         );
     """)
 
-    # 4. Official FDA Reference Tables (_code_*) & Raxtik Semantics
-    _populate_reference_dimensions(con)
+    # 4. Reference Tables (_code_*) & Raxtik Semantics
+    _populate_reference_dimensions(con, reference_tables=reference_tables)
 
     def _scalar(sql: str, default: Any = 0) -> Any:
         row = con.execute(sql).fetchone()
@@ -215,42 +253,66 @@ def populate_package_metadata(
     """)
 
 
-def _populate_reference_dimensions(con: duckdb.DuckDBPyConnection):
-    """Installs official FDA CDER reference tables and Raxtik semantic interpretation tables."""
+def _populate_reference_dimensions(
+    con: duckdb.DuckDBPyConnection,
+    reference_tables: Optional[Dict[str, List[Any]]] = None,
+) -> None:
+    """Installs reference codelist tables from source adapter and Raxtik semantic interpretation tables.
 
-    # 1. Official FDA Outcomes Reference (_code_outcomes)
-    con.execute("""
-        CREATE OR REPLACE TABLE _code_outcomes (
-            outcome_code VARCHAR PRIMARY KEY,
-            outcome_label VARCHAR,
-            definition VARCHAR,
-            source_system VARCHAR,
-            source_document VARCHAR,
-            reference_version VARCHAR,
-            valid_from VARCHAR,
-            valid_to VARCHAR,
-            is_active BOOLEAN
-        );
-    """)
-    con.executemany(
-        "INSERT INTO _code_outcomes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-        [
-            (
-                e.code,
-                e.label,
-                e.definition,
-                e.source_system,
-                e.source_document,
-                e.reference_version,
-                e.valid_from,
-                e.valid_to,
-                e.is_active,
-            )
-            for e in FDA_OUTCOMES_REFERENCE
-        ],
-    )
+    Dynamically populates two categories of reference dimensions:
+    1. Source-Provided Reference Tables (`_code_*`):
+       Constructs physical lookup tables for all codelists supplied by the source adapter
+       (e.g., `_code_roles`, `_code_outcomes`, `_code_occupations`, `_code_report_sources`,
+       `_code_dechallenge`, `_code_rechallenge`). Each table contains primary key `code`,
+       human-readable `label`, `definition`, and temporal validity windows (`valid_from`, `valid_to`).
+    2. Raxtik Universal Clinical Semantics (`_code_outcome_semantics`):
+       Installs agency-agnostic clinical severity hierarchies and ICH E2B seriousness categories
+       mapped to patient outcomes, facilitating cross-source standardized pharmacovigilance analytics.
 
-    # 2. Raxtik-Derived Clinical Semantics (_code_outcome_semantics)
+    Args:
+        con: Active DuckDB database connection.
+        reference_tables: Optional dictionary mapping physical table names (e.g. '_code_outcomes')
+            to lists of ReferenceCodeEntry objects supplied by the source adapter.
+
+    Returns:
+        None
+    """
+    # 1. Source-Provided Reference Tables (_code_*)
+    for table_name, entries in (reference_tables or {}).items():
+        if not entries:
+            continue
+        con.execute(f"""
+            CREATE OR REPLACE TABLE {table_name} (
+                code VARCHAR PRIMARY KEY,
+                label VARCHAR,
+                definition VARCHAR,
+                source_system VARCHAR,
+                source_document VARCHAR,
+                reference_version VARCHAR,
+                valid_from VARCHAR,
+                valid_to VARCHAR,
+                is_active BOOLEAN
+            );
+        """)
+        con.executemany(
+            f"INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            [
+                (
+                    getattr(e, "code", getattr(e, "outcome_code", getattr(e, "role_code", ""))),
+                    getattr(e, "label", getattr(e, "outcome_label", getattr(e, "role_label", ""))),
+                    getattr(e, "definition", ""),
+                    getattr(e, "source_system", ""),
+                    getattr(e, "source_document", ""),
+                    getattr(e, "reference_version", "1.0.0"),
+                    getattr(e, "valid_from", ""),
+                    getattr(e, "valid_to", None),
+                    getattr(e, "is_active", True),
+                )
+                for e in entries
+            ],
+        )
+
+    # 2. Raxtik-Derived Universal Clinical Semantics (_code_outcome_semantics)
     con.execute("""
         CREATE OR REPLACE TABLE _code_outcome_semantics (
             outcome_code VARCHAR PRIMARY KEY,
@@ -273,165 +335,5 @@ def _populate_reference_dimensions(con: duckdb.DuckDBPyConnection):
                 s.semantic_source,
             )
             for s in RAXTIK_OUTCOME_SEMANTICS
-        ],
-    )
-
-    # 3. Official FDA Drug Roles (_code_roles)
-    con.execute("""
-        CREATE OR REPLACE TABLE _code_roles (
-            role_code VARCHAR PRIMARY KEY,
-            role_label VARCHAR,
-            definition VARCHAR,
-            source_system VARCHAR,
-            source_document VARCHAR,
-            reference_version VARCHAR,
-            valid_from VARCHAR,
-            valid_to VARCHAR,
-            is_active BOOLEAN
-        );
-    """)
-    con.executemany(
-        "INSERT INTO _code_roles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-        [
-            (
-                e.code,
-                e.label,
-                e.definition,
-                e.source_system,
-                e.source_document,
-                e.reference_version,
-                e.valid_from,
-                e.valid_to,
-                e.is_active,
-            )
-            for e in FDA_ROLES_REFERENCE
-        ],
-    )
-
-    # 4. Official FDA Reporter Occupations (_code_occupations)
-    con.execute("""
-        CREATE OR REPLACE TABLE _code_occupations (
-            occupation_code VARCHAR PRIMARY KEY,
-            occupation_label VARCHAR,
-            definition VARCHAR,
-            source_system VARCHAR,
-            source_document VARCHAR,
-            reference_version VARCHAR,
-            valid_from VARCHAR,
-            valid_to VARCHAR,
-            is_active BOOLEAN
-        );
-    """)
-    con.executemany(
-        "INSERT INTO _code_occupations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-        [
-            (
-                e.code,
-                e.label,
-                e.definition,
-                e.source_system,
-                e.source_document,
-                e.reference_version,
-                e.valid_from,
-                e.valid_to,
-                e.is_active,
-            )
-            for e in FDA_OCCUPATIONS_REFERENCE
-        ],
-    )
-
-    # 5. Official FDA Report Sources (_code_report_sources)
-    con.execute("""
-        CREATE OR REPLACE TABLE _code_report_sources (
-            report_source_code VARCHAR PRIMARY KEY,
-            report_source_label VARCHAR,
-            definition VARCHAR,
-            source_system VARCHAR,
-            source_document VARCHAR,
-            reference_version VARCHAR,
-            valid_from VARCHAR,
-            valid_to VARCHAR,
-            is_active BOOLEAN
-        );
-    """)
-    con.executemany(
-        "INSERT INTO _code_report_sources VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-        [
-            (
-                e.code,
-                e.label,
-                e.definition,
-                e.source_system,
-                e.source_document,
-                e.reference_version,
-                e.valid_from,
-                e.valid_to,
-                e.is_active,
-            )
-            for e in FDA_REPORT_SOURCES_REFERENCE
-        ],
-    )
-
-    # 6. Official FDA Dechallenge (_code_dechallenge)
-    con.execute("""
-        CREATE OR REPLACE TABLE _code_dechallenge (
-            dechallenge_code VARCHAR PRIMARY KEY,
-            dechallenge_label VARCHAR,
-            definition VARCHAR,
-            source_system VARCHAR,
-            source_document VARCHAR,
-            reference_version VARCHAR,
-            valid_from VARCHAR,
-            valid_to VARCHAR,
-            is_active BOOLEAN
-        );
-    """)
-    con.executemany(
-        "INSERT INTO _code_dechallenge VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-        [
-            (
-                e.code,
-                e.label,
-                e.definition,
-                e.source_system,
-                e.source_document,
-                e.reference_version,
-                e.valid_from,
-                e.valid_to,
-                e.is_active,
-            )
-            for e in FDA_DECHALLENGE_REFERENCE
-        ],
-    )
-
-    # 7. Official FDA Rechallenge (_code_rechallenge)
-    con.execute("""
-        CREATE OR REPLACE TABLE _code_rechallenge (
-            rechallenge_code VARCHAR PRIMARY KEY,
-            rechallenge_label VARCHAR,
-            definition VARCHAR,
-            source_system VARCHAR,
-            source_document VARCHAR,
-            reference_version VARCHAR,
-            valid_from VARCHAR,
-            valid_to VARCHAR,
-            is_active BOOLEAN
-        );
-    """)
-    con.executemany(
-        "INSERT INTO _code_rechallenge VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-        [
-            (
-                e.code,
-                e.label,
-                e.definition,
-                e.source_system,
-                e.source_document,
-                e.reference_version,
-                e.valid_from,
-                e.valid_to,
-                e.is_active,
-            )
-            for e in FDA_RECHALLENGE_REFERENCE
         ],
     )

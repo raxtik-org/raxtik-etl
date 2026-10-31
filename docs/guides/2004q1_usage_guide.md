@@ -133,7 +133,7 @@ Fact tables (`demo`, `drug`, `reac`, `outc`, `rpsr`) store raw reported codes. T
 | **`_code_rechallenge`** | Action on Drug Reintroduction | `rechallenge_code` (`Y`, `N`, `U`, `D`), `rechallenge_label` |
 | **`_schema_registry`** | Complete Machine-Readable Column Catalog | `entity`, `field_name`, `data_type`, `value_origin`, `category` |
 | **`_data_quality_report`** | Automated EDA Profiling Snapshot | `metric_name`, `metric_value`, `metric_category` |
-| **`_metadata`** | Quad-Versioning & Licensing Terms | `release_quarter`, `package_format_version`, `source_data_license`, etc. |
+| **`_metadata`** | Quad-Versioning & Licensing Terms | `data_period`, `package_format_version`, `source_data_license`, etc. |
 
 ---
 
@@ -141,7 +141,7 @@ Fact tables (`demo`, `drug`, `reac`, `outc`, `rpsr`) store raw reported codes. T
 
 To rebuild the package from source using the decoupled `faers` plugin:
 ```bash
-uv run raxtik-etl build-package --source faers --release 2004Q1
+uv run raxtik-etl build-package --source faers --data-period 2004Q1
 ```
 
 To run the full contract and correctness audit suite:

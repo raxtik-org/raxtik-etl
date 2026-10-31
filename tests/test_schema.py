@@ -8,8 +8,8 @@ from raxtik_etl.schema.canonical import (
 )
 from raxtik_etl.schema.registry import (
     CANONICAL_SCHEMA_VERSION,
-    CASE_RESOLUTION_VERSION,
-    get_signature_mapping,
+    SCHEMA_REGISTRY,
+    get_entity_fields,
 )
 from raxtik_etl.schema.views import get_latest_cases_view_sql
 
@@ -17,7 +17,7 @@ from raxtik_etl.schema.views import get_latest_cases_view_sql
 def test_provenance_and_versioning():
     prov = Provenance(
         source_system="FDA_FAERS_ASCII",
-        source_release="2004Q1",
+        data_period="2004Q1",
         source_file="DEMO04Q1.txt",
         source_record_locator="row:100",
         source_signature_id="S1",
@@ -25,6 +25,7 @@ def test_provenance_and_versioning():
         canonical_schema_version=CANONICAL_SCHEMA_VERSION,
     )
     assert prov.source_signature_id == "S1"
+    assert prov.data_period == "2004Q1"
     assert prov.canonical_schema_version == "1.0.0"
     assert prov.source_record_locator == "row:100"
 
@@ -33,7 +34,7 @@ def test_canonical_case_reported_vs_derived():
     case = CanonicalCase(
         primary_id="10001",
         case_id="1000",
-        fda_case_version=None,  # Legacy S1 has no fda_case_version
+        source_case_version=None,
         canonical_case_version=1,
         foll_seq="0",
         reported_age=45.0,
@@ -43,7 +44,7 @@ def test_canonical_case_reported_vs_derived():
         standard_sex_label="Female",
     )
     assert case.primary_id == "10001"
-    assert case.fda_case_version is None
+    assert case.source_case_version is None
     assert case.canonical_case_version == 1
     assert case.standard_age_years == 45.0
     assert case.standard_sex_label == "Female"
@@ -69,25 +70,32 @@ def test_canonical_drug_verbatim_preservation():
     assert drug.derivation_status == DerivationStatus.SUCCESS
 
 
-def test_schema_registry_signature_mappings():
-    # Verify S1 (Legacy AERS) maps ISR to primary_id and CASE to case_id
-    demo_s1_map = get_signature_mapping("S1", "demo")
-    assert demo_s1_map["isr"] == "primary_id"
-    assert demo_s1_map["case"] == "case_id"
-    assert demo_s1_map["gndr_cod"] == "reported_sex_code"
-    assert "prod_ai" not in get_signature_mapping("S1", "drug")
+def test_schema_registry_entities():
+    assert len(SCHEMA_REGISTRY) > 0
+    demo_fields = get_entity_fields("demo")
+    assert any(f.field_name == "primary_id" for f in demo_fields)
+    assert any(f.field_name == "case_id" for f in demo_fields)
+    assert any(f.field_name == "event_date" for f in demo_fields)
 
-    # Verify S3 (Modern FAERS) maps PRIMARYID and PROD_AI
-    demo_s3_map = get_signature_mapping("S3", "demo")
-    assert demo_s3_map["primaryid"] == "primary_id"
-    assert demo_s3_map["sex"] == "reported_sex_code"
-
-    drug_s3_map = get_signature_mapping("S3", "drug")
-    assert drug_s3_map["prod_ai"] == "reported_active_ingredient"
+    drug_fields = get_entity_fields("drug")
+    assert any(f.field_name == "reported_drug_name" for f in drug_fields)
+    assert any(f.field_name == "role_code" for f in drug_fields)
 
 
 def test_views_sql_generation():
     sql = get_latest_cases_view_sql()
     assert "CREATE OR REPLACE VIEW cases AS" in sql
-    assert f"Version: {CASE_RESOLUTION_VERSION}" in sql
     assert "canonical_case_version DESC" in sql
+
+
+def test_declarative_canonical_models():
+    pks = CanonicalCase.get_primary_keys()
+    assert pks == ["primary_id"]
+
+    drug_pks = CanonicalDrug.get_primary_keys()
+    assert drug_pks == ["primary_id", "drug_seq"]
+
+    ddl = CanonicalCase.get_create_table_ddl()
+    assert "CREATE TABLE IF NOT EXISTS demo (" in ddl
+    assert "primary_id VARCHAR NOT NULL" in ddl
+    assert "PRIMARY KEY (primary_id)" in ddl

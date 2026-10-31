@@ -6,13 +6,15 @@ resolving each CASEID to its latest authoritative version, without mutating unde
 
 from __future__ import annotations
 
-from raxtik_etl.schema.registry import CASE_RESOLUTION_VERSION
-
 
 def get_latest_cases_view_sql() -> str:
-    """Returns the SQL to create the `cases` view resolving the latest caseversion per case_id."""
-    return f"""
-    -- Case Resolution View (Version: {CASE_RESOLUTION_VERSION})
+    """Returns the SQL to create the `cases` view resolving the latest caseversion per case_id.
+
+    Returns:
+        SQL CREATE OR REPLACE VIEW statement string.
+    """
+    return """
+    -- Baseline Case Resolution View
     -- Resolves the single latest authoritative version per case_id
     CREATE OR REPLACE VIEW cases AS
     WITH ranked_reports AS (
@@ -22,7 +24,7 @@ def get_latest_cases_view_sql() -> str:
                 PARTITION BY case_id
                 ORDER BY
                     canonical_case_version DESC,
-                    fda_date DESC NULLS LAST,
+                    regulatory_date DESC NULLS LAST,
                     manufacturer_date DESC NULLS LAST,
                     primary_id DESC
             ) AS _rn
@@ -35,7 +37,12 @@ def get_latest_cases_view_sql() -> str:
 
 
 def get_active_substances_summary_view_sql() -> str:
-    """Returns a view aggregating primary suspect drugs and adverse events per case."""
+    """Returns a view aggregating primary suspect drugs and adverse events per case.
+
+    Returns:
+        SQL CREATE OR REPLACE VIEW statement string.
+    """
+
     return """
     CREATE OR REPLACE VIEW case_adverse_events_summary AS
     SELECT
