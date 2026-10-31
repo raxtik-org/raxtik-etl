@@ -1169,6 +1169,8 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "tox" },
+    { name = "tox-uv" },
     { name = "typos" },
 ]
 docs = [
@@ -1208,6 +1210,8 @@ requires-dist = [
     { name = "sphinx-autodoc-typehints", marker = "extra == 'docs'", specifier = ">=3.6.1" },
     { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5.2" },
     { name = "sphinx-rtd-theme", marker = "extra == 'docs'", specifier = ">=3.1.0" },
+    { name = "tox", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "tox-uv", marker = "extra == 'dev'", specifier = ">=1.11.0" },
     { name = "tqdm", specifier = ">=4.66.0" },
     { name = "typer", specifier = ">=0.12.0" },
     { name = "typos", marker = "extra == 'dev'", specifier = ">=1.30.0" },
