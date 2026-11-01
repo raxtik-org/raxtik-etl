@@ -14,7 +14,6 @@ from typing import List, Optional, Union
 
 import requests
 from rich.console import Console
-from tqdm import tqdm
 
 console = Console()
 
@@ -263,26 +262,14 @@ def download_package_from_hf(
                         f"Failed to download package '{filename}' from Hugging Face Hub at {url} (HTTP {response.status_code})."
                     )
 
-        total_size = int(response.headers.get("content-length", 0))
         part_file = dest_file.with_suffix(".duckdb.part")
         if part_file.exists():
             part_file.unlink()
 
         try:
-            with (
-                open(part_file, "wb") as f,
-                tqdm(
-                    desc=filename,
-                    total=total_size if total_size > 0 else None,
-                    unit="iB",
-                    unit_scale=True,
-                    unit_divisor=1024,
-                ) as bar,
-            ):
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        size = f.write(chunk)
-                        bar.update(size)
+            from raxtik_etl.sources.network import stream_download
+
+            stream_download(response, part_file, desc=filename)
 
             # Automatic SHA-256 verification on .part staging file before promotion
             from raxtik_etl.packaging.builder import compute_sha256

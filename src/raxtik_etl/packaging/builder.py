@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
@@ -33,6 +34,14 @@ PACKAGE_FORMAT_VERSION = "1.0.0"
 TABLES_TO_EXPORT = list(CANONICAL_TABLES)
 
 
+class PackageFormat(StrEnum):
+    """Supported export package formats."""
+
+    BOTH = "both"
+    DUCKDB = "duckdb"
+    PARQUET = "parquet"
+
+
 def compute_sha256(filepath: Path | str) -> str:
     """Computes streaming SHA-256 checksum of a file.
 
@@ -49,7 +58,7 @@ def compute_sha256(filepath: Path | str) -> str:
     return h.hexdigest()
 
 
-def validate_package_format(format_name: str) -> str:
+def validate_package_format(format_name: str | PackageFormat) -> str:
     """Validates and normalizes package format argument ('both', 'duckdb', 'parquet').
 
     Args:
@@ -61,12 +70,13 @@ def validate_package_format(format_name: str) -> str:
     Raises:
         ValueError: If format_name is not one of the supported formats.
     """
-    fmt = format_name.lower().strip()
-    if fmt not in ("both", "duckdb", "parquet"):
+    try:
+        return PackageFormat(str(format_name).lower().strip()).value
+    except ValueError:
+        valid_opts = [f.value for f in PackageFormat]
         raise ValueError(
-            f"Invalid format '{format_name}'. Supported options are 'both', 'duckdb', or 'parquet'."
-        )
-    return fmt
+            f"Invalid format '{format_name}'. Supported options are {valid_opts}."
+        ) from None
 
 
 def resolve_package_paths(
@@ -94,8 +104,7 @@ def resolve_package_paths(
     tmp_duckdb = out_dir / f".tmp_{duckdb_path.name}"
     tmp_parquet = out_dir / f".tmp_{parquet_dir.name}"
 
-    if tmp_duckdb.exists():
-        tmp_duckdb.unlink()
+    tmp_duckdb.unlink(missing_ok=True)
     if tmp_parquet.exists():
         shutil.rmtree(tmp_parquet, ignore_errors=True)
 

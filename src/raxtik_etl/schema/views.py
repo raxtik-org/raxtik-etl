@@ -24,7 +24,7 @@ def get_latest_cases_view_sql() -> str:
                 PARTITION BY case_id
                 ORDER BY
                     canonical_case_version DESC,
-                    regulatory_date DESC NULLS LAST,
+                    latest_regulatory_date DESC NULLS LAST,
                     manufacturer_date DESC NULLS LAST,
                     primary_id DESC
             ) AS _rn
@@ -56,7 +56,7 @@ def get_active_substances_summary_view_sql() -> str:
         d.reported_active_ingredient,
         r.reported_reaction_term AS reaction_term,
         o.outcome_code,
-        co.outcome_label
+        co.label AS outcome_label
     FROM cases c
     LEFT JOIN drug d
         ON c.primary_id = d.primary_id AND d.role_code = 'PS'
@@ -65,5 +65,5 @@ def get_active_substances_summary_view_sql() -> str:
     LEFT JOIN outc o
         ON c.primary_id = o.primary_id
     LEFT JOIN _code_outcomes co
-        ON o.outcome_code = co.outcome_code;
+        ON o.outcome_code = co.code;
     """

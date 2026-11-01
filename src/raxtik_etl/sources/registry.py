@@ -6,16 +6,11 @@ under the group `raxtik_etl.sources`.
 
 from __future__ import annotations
 
-import sys
 from functools import lru_cache
+from importlib.metadata import entry_points, version
 from typing import Dict, Type
 
 from raxtik_etl.sources.protocol import SourceAdapter
-
-if sys.version_info >= (3, 10):
-    from importlib.metadata import entry_points
-else:
-    from importlib_metadata import entry_points
 
 ENTRY_POINT_GROUP = "raxtik_etl.sources"
 
@@ -67,4 +62,17 @@ def get_source_adapter(source_name: str) -> SourceAdapter:
         )
 
     adapter_cls = sources[source_name]
-    return adapter_cls()
+    adapter = adapter_cls()
+
+    # Automatically resolve source_version from package metadata if not explicitly set
+    if getattr(adapter, "source_version", None) is None:
+        try:
+            mod_pkg = adapter_cls.__module__.split(".")[0]
+            adapter.source_version = version(mod_pkg)
+        except Exception:
+            try:
+                adapter.source_version = version(f"raxtik-source-{source_name}")
+            except Exception:
+                pass
+
+    return adapter

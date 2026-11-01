@@ -12,18 +12,6 @@
   "commit": false,
   "contributors": [
     {
-      "login": "prateekdagar",
-      "name": "Prateek Dagar",
-      "avatar_url": "https://avatars.githubusercontent.com/u/1041938?v=4",
-      "profile": "https://github.com/prateekdagar",
-      "contributions": [
-        "code",
-        "doc",
-        "infra",
-        "maintenance"
-      ]
-    },
-    {
       "login": "prateek-dagar",
       "name": "Prateek Dagar",
       "avatar_url": "https://avatars.githubusercontent.com/u/107306613?v=4",

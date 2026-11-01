@@ -2,12 +2,14 @@
 
 from raxtik_etl.packaging.builder import (
     PACKAGE_FORMAT_VERSION,
+    PackageFormat,
     build_quarterly_package,
     compute_sha256,
 )
 
 __all__ = [
     "PACKAGE_FORMAT_VERSION",
+    "PackageFormat",
     "build_quarterly_package",
     "compute_sha256",
 ]

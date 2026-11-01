@@ -73,7 +73,7 @@ def test_cli_hf_upload_batch_range(tmp_path: Path, monkeypatch):
     # Test batch upload requiring arguments
     res = runner.invoke(app, ["hf-upload"])
     assert res.exit_code != 0
-    assert "Please specify either --release" in res.output
+    assert "Please specify either --data-period" in res.output
 
     # Test batch upload range where files don't exist: should skip with warnings instead of crashing
     res_range = runner.invoke(

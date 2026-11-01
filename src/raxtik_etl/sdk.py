@@ -14,8 +14,8 @@ Example:
 
 from __future__ import annotations
 
-import sys
 from functools import lru_cache
+from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any, Dict, Optional, Type, Union
 
@@ -23,11 +23,6 @@ import duckdb
 import polars as pl
 from rich.console import Console
 from rich.table import Table
-
-if sys.version_info >= (3, 10):
-    from importlib.metadata import entry_points
-else:
-    from importlib_metadata import entry_points
 
 from raxtik_etl.distribution.huggingface import (
     DEFAULT_HTTP_TIMEOUT,
@@ -82,21 +77,22 @@ class BaseDataset:
             raise ValueError("data_period (e.g. '2004Q1') must be specified.")
         self.data_period = period_clean
         self.source = (source or self.source_name).lower()
+        self.hf_repo = (
+            hf_repo or self.default_hf_repo or f"raxtik-org/{self.source}-safety-database"
+        )
         self.pkg_dir = Path(package_dir) if package_dir else get_default_package_dir()
         self.duckdb_path = self.pkg_dir / f"{self.source}_{self.data_period}.duckdb"
 
         if not self.duckdb_path.exists():
             if download_if_missing:
                 from raxtik_etl.distribution.huggingface import (
-                    DEFAULT_HF_REPO,
                     download_package_from_hf,
                 )
 
-                repo = hf_repo or self.default_hf_repo or DEFAULT_HF_REPO
                 download_package_from_hf(
                     data_period_or_name=self.data_period,
                     dest_dir=self.pkg_dir,
-                    repo_id=repo,
+                    repo_id=self.hf_repo,
                     source_name=self.source,
                     timeout=timeout,
                     revision=revision,

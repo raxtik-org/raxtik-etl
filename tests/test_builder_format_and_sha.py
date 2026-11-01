@@ -104,7 +104,22 @@ def test_compute_sha256(tmp_path: Path):
     assert sha == compute_sha256(f)
 
 
-def test_builder_format_duckdb_only(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("pkg_format", "delete_ascii", "expect_duckdb", "expect_parquet", "expect_zip_deleted"),
+    [
+        ("duckdb", False, True, False, False),
+        ("parquet", False, False, True, False),
+        ("both", True, True, True, True),
+    ],
+)
+def test_builder_formats_and_cleanup(
+    tmp_path: Path,
+    pkg_format: str,
+    delete_ascii: bool,
+    expect_duckdb: bool,
+    expect_parquet: bool,
+    expect_zip_deleted: bool,
+):
     dummy_zip = tmp_path / "mock_2024q1.zip"
     dummy_zip.write_bytes(b"mock_zip_content")
 
@@ -115,63 +130,27 @@ def test_builder_format_duckdb_only(tmp_path: Path):
         source_name="mock",
         adapter=MockAdapter(),
         output_dir=out_dir,
-        format="duckdb",
-        delete_ascii=False,
+        format=pkg_format,
+        delete_ascii=delete_ascii,
     )
 
-    duckdb_file = Path(res["duckdb_path"])
-    assert duckdb_file.exists()
-    assert "sha256" in res
-    assert len(res["sha256"]) == 64
-    assert not (out_dir / "mock_2024Q1.duckdb.sha256").exists()
-    assert "parquet_dir" not in res
-    assert not (out_dir / "mock_2024Q1.parquet").exists()
-    assert dummy_zip.exists()  # delete_ascii was False
+    if expect_duckdb:
+        assert Path(res["duckdb_path"]).exists()
+        assert len(res["sha256"]) == 64
+        assert not (out_dir / "mock_2024Q1.duckdb.sha256").exists()
+    else:
+        assert "duckdb_path" not in res
+        assert not (out_dir / "mock_2024Q1.duckdb").exists()
 
+    if expect_parquet:
+        parquet_dir = Path(res["parquet_dir"])
+        assert parquet_dir.exists()
+        assert (parquet_dir / "demo.parquet").exists()
+    else:
+        assert "parquet_dir" not in res
+        assert not (out_dir / "mock_2024Q1.parquet").exists()
 
-def test_builder_format_parquet_only(tmp_path: Path):
-    dummy_zip = tmp_path / "mock_2024q1.zip"
-    dummy_zip.write_bytes(b"mock_zip_content")
-
-    out_dir = tmp_path / "packages"
-    res = build_quarterly_package(
-        data_period="2024Q1",
-        zip_path=dummy_zip,
-        source_name="mock",
-        adapter=MockAdapter(),
-        output_dir=out_dir,
-        format="parquet",
-        delete_ascii=False,
-    )
-
-    parquet_dir = Path(res["parquet_dir"])
-    assert parquet_dir.exists()
-    assert (parquet_dir / "demo.parquet").exists()
-    assert "duckdb_path" not in res
-    assert not (out_dir / "mock_2024Q1.duckdb").exists()
-
-
-def test_builder_format_both_and_cleanup(tmp_path: Path):
-    dummy_zip = tmp_path / "mock_2024q1.zip"
-    dummy_zip.write_bytes(b"mock_zip_content")
-
-    out_dir = tmp_path / "packages"
-    res = build_quarterly_package(
-        data_period="2024Q1",
-        zip_path=dummy_zip,
-        source_name="mock",
-        adapter=MockAdapter(),
-        output_dir=out_dir,
-        format="both",
-        delete_ascii=True,
-    )
-
-    assert Path(res["duckdb_path"]).exists()
-    assert Path(res["parquet_dir"]).exists()
-    assert "sha256" in res
-    assert len(res["sha256"]) == 64
-    assert not (out_dir / "mock_2024Q1.duckdb.sha256").exists()
-    assert not dummy_zip.exists()  # deleted because delete_ascii=True
+    assert dummy_zip.exists() != expect_zip_deleted
 
 
 def test_builder_invalid_format(tmp_path: Path):
@@ -199,7 +178,7 @@ def test_sha256_verification_sdk(tmp_path: Path):
     real_sha = compute_sha256(pkg_file)
 
     ds = BaseDataset(
-        release="2024Q1",
+        data_period="2024Q1",
         source="mock",
         package_dir=tmp_path,
     )
@@ -214,7 +193,7 @@ def test_sha256_verification_sdk(tmp_path: Path):
     # Companion .sha256 file automatic verification
     sha_file = tmp_path / "mock_2024Q1.duckdb.sha256"
     sha_file.write_text(f"{real_sha}  mock_2024Q1.duckdb\n")
-    ds2 = BaseDataset(release="2024Q1", source="mock", package_dir=tmp_path)
+    ds2 = BaseDataset(data_period="2024Q1", source="mock", package_dir=tmp_path)
     assert ds2.verify_checksum() is True
     ds2.close()
 

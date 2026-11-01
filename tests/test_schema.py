@@ -1,5 +1,9 @@
 """Comprehensive unit tests for Canonical Schema, Registry, and Views."""
 
+from __future__ import annotations
+
+import pytest
+
 from raxtik_etl.schema.canonical import (
     CanonicalCase,
     CanonicalDrug,
@@ -70,16 +74,18 @@ def test_canonical_drug_verbatim_preservation():
     assert drug.derivation_status == DerivationStatus.SUCCESS
 
 
-def test_schema_registry_entities():
+@pytest.mark.parametrize(
+    ("entity", "expected_fields"),
+    [
+        ("demo", ["primary_id", "case_id", "event_date"]),
+        ("drug", ["reported_drug_name", "role_code"]),
+    ],
+)
+def test_schema_registry_entities(entity: str, expected_fields: list[str]) -> None:
     assert len(SCHEMA_REGISTRY) > 0
-    demo_fields = get_entity_fields("demo")
-    assert any(f.field_name == "primary_id" for f in demo_fields)
-    assert any(f.field_name == "case_id" for f in demo_fields)
-    assert any(f.field_name == "event_date" for f in demo_fields)
-
-    drug_fields = get_entity_fields("drug")
-    assert any(f.field_name == "reported_drug_name" for f in drug_fields)
-    assert any(f.field_name == "role_code" for f in drug_fields)
+    fields = [f.field_name for f in get_entity_fields(entity)]
+    for field in expected_fields:
+        assert field in fields
 
 
 def test_views_sql_generation():
@@ -88,13 +94,18 @@ def test_views_sql_generation():
     assert "canonical_case_version DESC" in sql
 
 
-def test_declarative_canonical_models():
-    pks = CanonicalCase.get_primary_keys()
-    assert pks == ["primary_id"]
+@pytest.mark.parametrize(
+    ("model_cls", "expected_pks"),
+    [
+        (CanonicalCase, ["primary_id"]),
+        (CanonicalDrug, ["primary_id", "drug_seq"]),
+    ],
+)
+def test_canonical_models_primary_keys(model_cls, expected_pks: list[str]) -> None:
+    assert model_cls.get_primary_keys() == expected_pks
 
-    drug_pks = CanonicalDrug.get_primary_keys()
-    assert drug_pks == ["primary_id", "drug_seq"]
 
+def test_canonical_case_ddl():
     ddl = CanonicalCase.get_create_table_ddl()
     assert "CREATE TABLE IF NOT EXISTS demo (" in ddl
     assert "primary_id VARCHAR NOT NULL" in ddl

@@ -7,13 +7,21 @@ from raxtik_etl.cli import parse_quarter_range
 from raxtik_etl.consolidation import get_consolidation_summary_report
 
 
-def test_parse_quarter_range():
-    quarters = parse_quarter_range("2004Q1", "2006Q4")
-    assert len(quarters) == 12
-    assert quarters[0] == "2004Q1"
-    assert quarters[-1] == "2006Q4"
-    assert quarters[4] == "2005Q1"
-    assert quarters[8] == "2006Q1"
+@pytest.mark.parametrize(
+    ("start", "end", "expected_count", "first", "last"),
+    [
+        ("2004Q1", "2006Q4", 12, "2004Q1", "2006Q4"),
+        ("2020Q1", "2020Q1", 1, "2020Q1", "2020Q1"),
+        ("2020Q1", "2020Q4", 4, "2020Q1", "2020Q4"),
+    ],
+)
+def test_parse_quarter_range(
+    start: str, end: str, expected_count: int, first: str, last: str
+) -> None:
+    quarters = parse_quarter_range(start, end)
+    assert len(quarters) == expected_count
+    assert quarters[0] == first
+    assert quarters[-1] == last
 
 
 def test_merged_cohort_deduplication_integrity():

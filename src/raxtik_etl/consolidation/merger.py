@@ -9,7 +9,6 @@ Provides functionality to:
 
 from __future__ import annotations
 
-import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,42 +21,11 @@ from rich.table import Table
 from raxtik_etl.packaging.builder import PACKAGE_OUTPUT_DIR
 from raxtik_etl.schema.registry import CANONICAL_TABLES
 from raxtik_etl.sources.registry import get_source_adapter
+from raxtik_etl.sources.temporal import (
+    validate_and_normalize_data_periods as validate_and_normalize_data_periods,
+)
 
 console = Console()
-
-
-def validate_and_normalize_data_periods(data_periods: List[str]) -> List[str]:
-    """Validates period inputs, ensuring non-empty, valid format, deduplicated, and chronologically ordered.
-
-    Args:
-        data_periods: List of temporal period identifiers (e.g., ['2004Q1', '2005Q2']).
-
-    Returns:
-        List of deduplicated, chronologically sorted period strings.
-
-    Raises:
-        ValueError: If data_periods is empty or contains malformed period formats.
-    """
-    if not data_periods:
-        raise ValueError("Data periods list cannot be empty. Please provide at least one period.")
-
-    pattern = re.compile(r"^(\d{4})Q([1-4])$")
-    normalized: List[str] = []
-    seen = set()
-
-    for p in data_periods:
-        clean = p.strip().upper()
-        if not pattern.match(clean):
-            raise ValueError(
-                f"Invalid period identifier '{p}'. Expected format 'YYYYQX' (e.g. '2004Q1')."
-            )
-        if clean not in seen:
-            seen.add(clean)
-            normalized.append(clean)
-
-    # Sort chronologically by year and quarter
-    normalized.sort(key=lambda x: (int(x[:4]), int(x[-1])))
-    return normalized
 
 
 def build_consolidated_package(
@@ -138,8 +106,15 @@ def build_consolidated_package(
                 "_code_dechallenge",
                 "_code_rechallenge",
             ]
+            existing_ref = {
+                r[0]
+                for r in con.execute(
+                    "SELECT table_name FROM information_schema.tables WHERE table_catalog = 'ref_pkg'"
+                ).fetchall()
+            }
             for rt in ref_tables:
-                con.execute(f"CREATE TABLE {rt} AS SELECT * FROM ref_pkg.{rt};")
+                if rt in existing_ref:
+                    con.execute(f"CREATE TABLE {rt} AS SELECT * FROM ref_pkg.{rt};")
             con.execute("DETACH ref_pkg;")
 
         # 3. Resolve adapter and build Longitudinal Case Lineage Table

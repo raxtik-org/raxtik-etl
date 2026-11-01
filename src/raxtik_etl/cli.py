@@ -17,6 +17,7 @@ from raxtik_etl.distribution.huggingface import (
 )
 from raxtik_etl.packaging.builder import PACKAGE_OUTPUT_DIR, build_quarterly_package
 from raxtik_etl.sdk import Dataset
+from raxtik_etl.sources import parse_quarter_range
 from raxtik_etl.sources.registry import (
     SourcePluginNotFoundError,
     get_available_sources,
@@ -32,33 +33,6 @@ console = Console()
 CACHE_DIR = Path(
     os.environ.get("FAERS_CACHE_DIR", Path.home() / ".cache" / "raxtik" / "raw_archives")
 )
-
-
-def parse_quarter_range(start_quarter: str, end_quarter: str) -> List[str]:
-    """Generates an inclusive list of quarterly releases between start and end (e.g. '2004Q1' to '2006Q4').
-
-    Args:
-        start_quarter: Starting period identifier (e.g. '2004Q1').
-        end_quarter: Ending period identifier (e.g. '2006Q4').
-
-    Returns:
-        List of period identifier strings from start to end inclusive.
-    """
-    start_clean = start_quarter.strip().upper()
-    end_clean = end_quarter.strip().upper()
-
-    start_y, start_q = int(start_clean[:4]), int(start_clean[-1])
-    end_y, end_q = int(end_clean[:4]), int(end_clean[-1])
-
-    quarters: List[str] = []
-    y, q = start_y, start_q
-    while (y < end_y) or (y == end_y and q <= end_q):
-        quarters.append(f"{y}Q{q}")
-        q += 1
-        if q > 4:
-            q = 1
-            y += 1
-    return quarters
 
 
 @app.command("build-package")
@@ -101,13 +75,13 @@ def build_package_cmd(
     if not archive_file.exists():
         if hasattr(adapter, "fetch_archive"):
             console.print(
-                f"[bold cyan]Raw archive not found locally. Fetching {period_clean} via [{adapter.source_name}] connector...[/bold cyan]"
+                f"[bold cyan]Raw archive not found locally. Fetching {period_clean} via \\[{adapter.source_name}\\] connector...[/bold cyan]"
             )
             try:
                 archive_file = adapter.fetch_archive(data_period=period_clean, dest_dir=CACHE_DIR)
             except Exception as dl_err:
                 console.print(
-                    f"[bold red]Failed to download {period_clean} via [{adapter.source_name}] connector: {dl_err}[/bold red]"
+                    f"[bold red]Failed to download {period_clean} via \\[{adapter.source_name}\\] connector: {dl_err}[/bold red]"
                 )
                 raise typer.Exit(code=1)
         else:
@@ -294,11 +268,14 @@ def batch_build_cmd(
         if not archive_file.exists():
             if hasattr(adapter, "fetch_archive"):
                 console.print(
-                    f"[bold cyan]Fetching {q} via [{adapter.source_name}] connector...[/bold cyan]"
+                    f"[bold cyan]Fetching {q} via \\[{adapter.source_name}\\] connector...[/bold cyan]"
                 )
                 t_dl0 = time.perf_counter()
                 try:
-                    archive_file = adapter.fetch_archive(data_period=q, dest_dir=CACHE_DIR)
+                    try:
+                        archive_file = adapter.fetch_archive(data_period=q, dest_dir=CACHE_DIR)
+                    except TypeError:
+                        archive_file = adapter.fetch_archive(release=q, dest_dir=CACHE_DIR)
                 except Exception as dl_err:
                     console.print(
                         f"[yellow]Could not download {q} from source: {dl_err}. Skipping (not published yet).[/yellow]"

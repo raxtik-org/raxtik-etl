@@ -15,7 +15,7 @@ import duckdb
 import pytest
 from raxtik_source_faers.adapter import FAERSAdapter
 
-from raxtik_etl.consolidation import validate_and_normalize_releases
+from raxtik_etl.consolidation import validate_and_normalize_data_periods
 
 
 @pytest.fixture
@@ -25,21 +25,22 @@ def memory_db():
     con.close()
 
 
-def test_cohort_release_input_validation():
-    # 1. Empty list
-    with pytest.raises(ValueError, match="cannot be empty"):
-        validate_and_normalize_releases([])
+@pytest.mark.parametrize(
+    ("invalid_input", "error_match"),
+    [
+        ([], r"cannot be empty"),
+        (["2004Q5"], r"Invalid quarter"),
+        (["invalid_quarter"], r"Invalid quarter"),
+    ],
+)
+def test_cohort_release_input_validation_errors(invalid_input, error_match):
+    with pytest.raises(ValueError, match=error_match):
+        validate_and_normalize_data_periods(invalid_input)
 
-    # 2. Invalid format
-    with pytest.raises(ValueError, match="Invalid quarter release identifier"):
-        validate_and_normalize_releases(["2004Q5"])
 
-    with pytest.raises(ValueError, match="Invalid quarter release identifier"):
-        validate_and_normalize_releases(["invalid_quarter"])
-
-    # 3. Deduplication and sorting
+def test_cohort_release_input_dedup_and_sort():
     input_releases = ["2005Q2", "2004Q1", "2005Q1", "2004Q1", "2004Q3"]
-    normalized = validate_and_normalize_releases(input_releases)
+    normalized = validate_and_normalize_data_periods(input_releases)
     assert normalized == ["2004Q1", "2004Q3", "2005Q1", "2005Q2"]
 
 
@@ -53,13 +54,13 @@ def test_case_resolution_ordering_rules(memory_db):
             primary_id VARCHAR,
             case_id VARCHAR,
             canonical_case_version INTEGER,
-            fda_date VARCHAR,
+            latest_regulatory_date VARCHAR,
             manufacturer_date VARCHAR,
             event_date VARCHAR,
             standard_age_years DOUBLE,
             standard_sex_label VARCHAR,
             initial_or_followup_code VARCHAR,
-            _source_release VARCHAR
+            _data_period VARCHAR
         );
     """)
 
@@ -120,12 +121,12 @@ def test_analytical_summary_view_zero_cartesian_fanout(memory_db):
             primary_id VARCHAR,
             case_id VARCHAR,
             canonical_case_version INTEGER,
-            fda_date VARCHAR,
+            latest_regulatory_date VARCHAR,
             manufacturer_date VARCHAR,
             event_date VARCHAR,
             standard_age_years DOUBLE,
             standard_sex_label VARCHAR,
-            _source_release VARCHAR
+            _data_period VARCHAR
         );
         CREATE TABLE drug (
             primary_id VARCHAR,
@@ -142,8 +143,8 @@ def test_analytical_summary_view_zero_cartesian_fanout(memory_db):
             outcome_code VARCHAR
         );
         CREATE TABLE _code_outcomes (
-            outcome_code VARCHAR PRIMARY KEY,
-            outcome_label VARCHAR
+            code VARCHAR PRIMARY KEY,
+            label VARCHAR
         );
     """)
 
