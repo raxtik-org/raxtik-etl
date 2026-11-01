@@ -272,10 +272,7 @@ def batch_build_cmd(
                 )
                 t_dl0 = time.perf_counter()
                 try:
-                    try:
-                        archive_file = adapter.fetch_archive(data_period=q, dest_dir=CACHE_DIR)
-                    except TypeError:
-                        archive_file = adapter.fetch_archive(release=q, dest_dir=CACHE_DIR)
+                    archive_file = adapter.fetch_archive(data_period=q, dest_dir=CACHE_DIR)
                 except Exception as dl_err:
                     console.print(
                         f"[yellow]Could not download {q} from source: {dl_err}. Skipping (not published yet).[/yellow]"
