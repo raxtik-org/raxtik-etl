@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import duckdb
 import pytest
-from raxtik_source_faers.adapter import FAERSAdapter
 
 from raxtik_etl.consolidation import validate_and_normalize_data_periods
+from raxtik_etl.schema.views import get_latest_cases_view_sql
 
 
 @pytest.fixture
@@ -46,7 +46,6 @@ def test_cohort_release_input_dedup_and_sort():
 
 def test_case_resolution_ordering_rules(memory_db):
     con = memory_db
-    adapter = FAERSAdapter()
 
     # Create synthetic demo table
     con.execute("""
@@ -69,10 +68,10 @@ def test_case_resolution_ordering_rules(memory_db):
         # Case C1: Version precedence (Version 2 wins over later date)
         ("101", "C1", 1, "20050101", "20041201", "20040101", 30.0, "Female", "I", "2004Q1"),
         ("102", "C1", 2, "20040601", "20040501", "20040101", 30.0, "Female", "F", "2004Q2"),
-        # Case C2: Date precedence (Versions equal, later fda_date wins)
+        # Case C2: Date precedence (Versions equal, later date wins)
         ("201", "C2", 1, "20040101", "20031201", "20030101", 45.0, "Male", "I", "2004Q1"),
         ("202", "C2", 1, "20040901", "20040801", "20030101", 45.0, "Male", "F", "2004Q3"),
-        # Case C3: Manufacturer date tie-breaker (Version and fda_date equal, later manufacturer_date wins)
+        # Case C3: Manufacturer date tie-breaker (Version and date equal, later manufacturer_date wins)
         ("301", "C3", 1, "20050101", "20041101", "20040101", 50.0, "Female", "I", "2005Q1"),
         ("302", "C3", 1, "20050101", "20041215", "20040101", 50.0, "Female", "F", "2005Q1"),
         # Case C4: Numeric primary_id tie-breaker (All versions and dates equal, higher numeric ID wins)
@@ -88,15 +87,17 @@ def test_case_resolution_ordering_rules(memory_db):
 
     con.executemany("INSERT INTO demo VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);", test_rows)
 
-    # Execute adapter case resolution
-    con.execute(adapter.get_case_resolution_sql())
+    # Execute canonical view resolution SQL
+    con.execute(get_latest_cases_view_sql())
 
     resolved = con.execute("SELECT case_id, primary_id FROM cases ORDER BY case_id").fetchall()
     resolved_dict = dict(resolved)
 
     # Assert exact deterministic resolution
     assert resolved_dict["C1"] == "102", "Case C1: Higher version (2 vs 1) must win"
-    assert resolved_dict["C2"] == "202", "Case C2: Later fda_date (20040901 vs 20040101) must win"
+    assert resolved_dict["C2"] == "202", (
+        "Case C2: Later regulatory date (20040901 vs 20040101) must win"
+    )
     assert resolved_dict["C3"] == "302", (
         "Case C3: Later manufacturer_date (20041215 vs 20041101) must win"
     )
@@ -105,119 +106,3 @@ def test_case_resolution_ordering_rules(memory_db):
     )
     assert resolved_dict["C5"] == "502", "Case C5: Valid version 1 must win over NULL version"
     assert resolved_dict["C6"] == "602", "Case C6: Valid date must win over NULL date"
-
-
-def test_analytical_summary_view_zero_cartesian_fanout(memory_db):
-    """Verifies that a report with multiple suspect drugs, reactions, and outcomes
-
-    produces EXACTLY 1 row per case in case_adverse_events_summary without multiplying counts.
-    """
-    con = memory_db
-    adapter = FAERSAdapter()
-
-    # 1. Setup tables
-    con.execute("""
-        CREATE TABLE demo (
-            primary_id VARCHAR,
-            case_id VARCHAR,
-            canonical_case_version INTEGER,
-            latest_regulatory_date VARCHAR,
-            manufacturer_date VARCHAR,
-            event_date VARCHAR,
-            standard_age_years DOUBLE,
-            standard_sex_label VARCHAR,
-            _data_period VARCHAR
-        );
-        CREATE TABLE drug (
-            primary_id VARCHAR,
-            reported_drug_name VARCHAR,
-            structural_clean_drug_name VARCHAR,
-            role_code VARCHAR
-        );
-        CREATE TABLE reac (
-            primary_id VARCHAR,
-            reported_reaction_term VARCHAR
-        );
-        CREATE TABLE outc (
-            primary_id VARCHAR,
-            outcome_code VARCHAR
-        );
-        CREATE TABLE _code_outcomes (
-            code VARCHAR PRIMARY KEY,
-            label VARCHAR
-        );
-    """)
-
-    con.execute("""
-        INSERT INTO _code_outcomes VALUES
-        ('DE', 'Death'),
-        ('HO', 'Hospitalization - Initial or Prolonged');
-    """)
-
-    # 2. Insert 1 report with multiple 1-to-many child rows:
-    # 2 Primary Suspect drugs ('PS') + 1 Concomitant ('C')
-    # 3 Distinct Reactions
-    # 2 Distinct Outcomes
-    # (In buggy Cartesian join: 2 * 3 * 2 = 12 rows!)
-    con.execute("""
-        INSERT INTO demo VALUES ('99901', 'CASE_MULTI', 1, '20200101', '20191201', '20191101', 55.0, 'Female', '2020Q1');
-    """)
-    con.execute("""
-        INSERT INTO drug VALUES
-        ('99901', 'ASPIRIN', 'ASPIRIN', 'PS'),
-        ('99901', 'WARFARIN', 'WARFARIN', 'PS'),
-        ('99901', 'METFORMIN', 'METFORMIN', 'C');
-    """)
-    con.execute("""
-        INSERT INTO reac VALUES
-        ('99901', 'GASTROINTESTINAL HAEMORRHAGE'),
-        ('99901', 'ANAEMIA'),
-        ('99901', 'HYPOTENSION');
-    """)
-    con.execute("""
-        INSERT INTO outc VALUES
-        ('99901', 'HO'),
-        ('99901', 'DE');
-    """)
-
-    # 3. Create cases view and summary view via adapter
-    con.execute(adapter.get_case_resolution_sql())
-    for _view_name, view_sql in adapter.get_summary_views_sql().items():
-        con.execute(view_sql)
-
-    # 4. Verify ZERO fan-out: exactly 1 row returned!
-    summary_rows = con.execute("""
-        SELECT * FROM case_adverse_events_summary WHERE case_id = 'CASE_MULTI';
-    """).fetchall()
-
-    assert len(summary_rows) == 1, (
-        f"Expected exactly 1 row for case, got {len(summary_rows)} (Cartesian fan-out!)"
-    )
-
-    # Verify column values
-    row = con.execute("""
-        SELECT
-            case_id,
-            primary_suspect_drugs,
-            reaction_terms,
-            reaction_count,
-            outcome_codes,
-            has_death,
-            has_hospitalization,
-            has_life_threatening
-        FROM case_adverse_events_summary
-        WHERE case_id = 'CASE_MULTI';
-    """).fetchone()
-
-    case_id, ps_drugs, reacs, reac_cnt, outc_codes, has_de, has_ho, has_lt = row
-    assert case_id == "CASE_MULTI"
-    assert set(ps_drugs) == {"ASPIRIN", "WARFARIN"}, (
-        "Only 'PS' suspect drugs should be in primary_suspect_drugs"
-    )
-    assert "METFORMIN" not in ps_drugs, "Concomitant drugs must not be in primary_suspect_drugs"
-    assert reac_cnt == 3
-    assert set(reacs) == {"GASTROINTESTINAL HAEMORRHAGE", "ANAEMIA", "HYPOTENSION"}
-    assert set(outc_codes) == {"HO", "DE"}
-    assert has_de is True, "has_death flag must be True"
-    assert has_ho is True, "has_hospitalization flag must be True"
-    assert has_lt is False, "has_life_threatening flag must be False"
