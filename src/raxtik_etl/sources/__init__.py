@@ -18,6 +18,13 @@ from raxtik_etl.sources.temporal import (
     parse_quarter_range,
     validate_and_normalize_data_periods,
 )
+from raxtik_etl.sources.validation import (
+    check_file_exists_and_non_empty,
+    check_required_columns,
+    parse_delimited_header,
+    read_first_line,
+    validate_extract_file,
+)
 
 __all__ = [
     "BaseSourceAdapter",
@@ -39,4 +46,9 @@ __all__ = [
     "clean_field_name",
     "detect_file_entity",
     "parse_delimited_file",
+    "check_file_exists_and_non_empty",
+    "read_first_line",
+    "parse_delimited_header",
+    "check_required_columns",
+    "validate_extract_file",
 ]

@@ -6,6 +6,7 @@ based on prefix mappings or pattern matchers.
 
 from __future__ import annotations
 
+import fnmatch
 from pathlib import Path
 from typing import Dict, List, Mapping, Union
 
@@ -16,6 +17,9 @@ def find_files_by_entity(
     pattern: str = "*.txt",
 ) -> Dict[str, List[Path]]:
     """Recursively search directory and categorize files matching prefix mapping.
+
+    Searches subdirectories recursively and matches file patterns
+    case-insensitively (e.g. matching both .txt and .TXT).
 
     Args:
         directory: Directory path to scan.
@@ -31,7 +35,11 @@ def find_files_by_entity(
 
     categorized: Dict[str, List[Path]] = {entity: [] for entity in prefix_to_entity.values()}
 
-    for file_path in dir_path.rglob(pattern):
+    for file_path in dir_path.rglob("*"):
+        if not file_path.is_file():
+            continue
+        if pattern and not fnmatch.fnmatch(file_path.name.lower(), pattern.lower()):
+            continue
         name = file_path.name.upper()
         for prefix, entity in prefix_to_entity.items():
             if name.startswith(prefix.upper()):

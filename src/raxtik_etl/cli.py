@@ -75,13 +75,13 @@ def build_package_cmd(
     if not archive_file.exists():
         if hasattr(adapter, "fetch_archive"):
             console.print(
-                f"[bold cyan]Raw archive not found locally. Fetching {period_clean} via \\[{adapter.source_name}\\] connector...[/bold cyan]"
+                f"[bold cyan]Raw archive not found locally. Fetching {period_clean} via \\[{adapter.source_name}] connector...[/bold cyan]"
             )
             try:
                 archive_file = adapter.fetch_archive(data_period=period_clean, dest_dir=CACHE_DIR)
             except Exception as dl_err:
                 console.print(
-                    f"[bold red]Failed to download {period_clean} via \\[{adapter.source_name}\\] connector: {dl_err}[/bold red]"
+                    f"[bold red]Failed to download {period_clean} via \\[{adapter.source_name}] connector: {dl_err}[/bold red]"
                 )
                 raise typer.Exit(code=1)
         else:
@@ -268,7 +268,7 @@ def batch_build_cmd(
         if not archive_file.exists():
             if hasattr(adapter, "fetch_archive"):
                 console.print(
-                    f"[bold cyan]Fetching {q} via \\[{adapter.source_name}\\] connector...[/bold cyan]"
+                    f"[bold cyan]Fetching {q} via \\[{adapter.source_name}] connector...[/bold cyan]"
                 )
                 t_dl0 = time.perf_counter()
                 try:

@@ -70,3 +70,27 @@ def test_get_source_adapter_cached_singleton():
     adapter1 = get_source_adapter("faers")
     adapter2 = get_source_adapter("faers")
     assert adapter1 is adapter2
+
+
+def test_find_files_by_entity_case_insensitive_and_nested(tmp_path):
+    """Verify find_files_by_entity matches uppercase .TXT files in subdirectories."""
+    from raxtik_etl.sources.discovery import find_files_by_entity
+
+    # Simulate FDA archive tree: root has README.doc, SIZE04Q1.TXT; ascii/ has DEMO04Q1.TXT
+    (tmp_path / "README.doc").touch()
+    (tmp_path / "SIZE04Q1.TXT").touch()
+    sub_ascii = tmp_path / "ascii"
+    sub_ascii.mkdir()
+    (sub_ascii / "DEMO04Q1.TXT").touch()
+    (sub_ascii / "DRUG04Q1.TXT").touch()
+
+    mapping = {"DEMO": "demo", "DRUG": "drug"}
+    found = find_files_by_entity(tmp_path, mapping, pattern="*.txt")
+
+    assert "demo" in found
+    assert len(found["demo"]) == 1
+    assert found["demo"][0] == sub_ascii / "DEMO04Q1.TXT"
+
+    assert "drug" in found
+    assert len(found["drug"]) == 1
+    assert found["drug"][0] == sub_ascii / "DRUG04Q1.TXT"

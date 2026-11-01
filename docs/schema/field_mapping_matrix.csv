@@ -26,7 +26,7 @@ demo,reporter_country,VARCHAR,C,NULL,NULL,REPORTER_COUNTRY,REPORTER_COUNTRY,Repo
 demo,occurrence_country,VARCHAR,C,NULL,NULL,OCCR_COUNTRY,OCCR_COUNTRY,Adverse event occurrence country code
 drug,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
 drug,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
-drug,drug_seq,INTEGER,A,DRUG_SEQ,DRUG_SEQ,DRUG_SEQ,DRUG_SEQ,Sequence number of drug in report (1 2 3...)
+drug,drug_seq,VARCHAR,A,DRUG_SEQ,DRUG_SEQ,DRUG_SEQ,DRUG_SEQ,Sequence number of drug in report (1 2 3...)
 drug,role_code,VARCHAR,E,ROLE_COD,ROLE_COD,ROLE_COD,ROLE_COD,Suspect role of drug (Preserves reported code)
 drug,reported_drug_name,VARCHAR,A,DRUGNAME,DRUGNAME,DRUGNAME,DRUGNAME,Immutable reported verbatim drug name
 drug,reported_active_ingredient,VARCHAR,C,NULL,NULL,PROD_AI,PROD_AI,Active ingredient text (Introduced 2014Q3)
@@ -37,7 +37,7 @@ drug,dose_amount,DOUBLE,F,NULL,DOSE_AMT,DOSE_AMT,DOSE_AMT,Numerical dose amount 
 drug,dose_unit,VARCHAR,F,NULL,DOSE_UNIT,DOSE_UNIT,DOSE_UNIT,Dose measurement unit (value_origin=FDA_REPORTED)
 drug,dose_form,VARCHAR,F,NULL,DOSE_FORM,DOSE_FORM,DOSE_FORM,Physical form (value_origin=FDA_REPORTED)
 drug,dose_frequency,VARCHAR,F,NULL,DOSE_FREQ,DOSE_FREQ,DOSE_FREQ,Dosing frequency (value_origin=FDA_REPORTED)
-drug,cumulative_dose_amount,DOUBLE,A,CUM_DOSE_CHR,CUM_DOSE_CHR,CUM_DOSE_CHR,CUM_DOSE_CHR,Cumulative dose taken before event
+drug,cumulative_dose_amount,VARCHAR,A,CUM_DOSE_CHR,CUM_DOSE_CHR,CUM_DOSE_CHR,CUM_DOSE_CHR,Cumulative dose taken before event
 drug,cumulative_dose_unit,VARCHAR,A,CUM_DOSE_UNIT,CUM_DOSE_UNIT,CUM_DOSE_UNIT,CUM_DOSE_UNIT,Cumulative dose unit
 drug,dechallenge_code,VARCHAR,A,DECHAL,DECHAL,DECHAL,DECHAL,Positive/negative dechallenge flag
 drug,rechallenge_code,VARCHAR,A,RECHAL,RECHAL,RECHAL,RECHAL,Positive/negative rechallenge flag
@@ -53,11 +53,11 @@ outc,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
 outc,outcome_code,VARCHAR,A,OUTC_COD,OUTC_COD,OUTC_COD,OUTC_COD,Coded outcome / seriousness (DE LT HO DS CA RI OT)
 indi,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
 indi,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
-indi,indication_drug_seq,INTEGER,H,DRUG_SEQ,INDI_DRUG_SEQ,INDI_DRUG_SEQ,INDI_DRUG_SEQ,Links to DRUG.drug_seq
+indi,indication_drug_seq,VARCHAR,H,DRUG_SEQ,INDI_DRUG_SEQ,INDI_DRUG_SEQ,INDI_DRUG_SEQ,Links to DRUG.drug_seq
 indi,reported_indication_term,VARCHAR,A,INDI_PT,INDI_PT,INDI_PT,INDI_PT,MedDRA Preferred Term indication
 ther,primary_id,VARCHAR,H,ISR,PRIMARYID,PRIMARYID,PRIMARYID,Links to DEMO primary_id
 ther,case_id,VARCHAR,H,NULL,CASEID,CASEID,CASEID,Links to DEMO case_id
-ther,therapy_drug_seq,INTEGER,H,DRUG_SEQ,DSG_DRUG_SEQ,DSG_DRUG_SEQ,DSG_DRUG_SEQ,Links to DRUG.drug_seq
+ther,therapy_drug_seq,VARCHAR,H,DRUG_SEQ,DSG_DRUG_SEQ,DSG_DRUG_SEQ,DSG_DRUG_SEQ,Links to DRUG.drug_seq
 ther,start_date,VARCHAR,A,START_DT,START_DT,START_DT,START_DT,Therapy start date (YYYYMMDD)
 ther,end_date,VARCHAR,A,END_DT,END_DT,END_DT,END_DT,Therapy end date (YYYYMMDD)
 ther,reported_duration,DOUBLE,A,DUR,DUR,DUR,DUR,Reported duration of therapy number

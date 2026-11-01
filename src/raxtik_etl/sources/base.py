@@ -8,7 +8,16 @@ can subclass BaseSourceAdapter and override only their dataset-specific methods.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Mapping, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Collection,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Union,
+)
 
 from raxtik_etl.schema.registry import CANONICAL_SCHEMA_VERSION
 from raxtik_etl.sources.discovery import find_files_by_entity
@@ -71,3 +80,16 @@ class BaseSourceAdapter(SourceAdapter):
     ) -> Dict[str, List[Path]]:
         """Helper to discover and categorize physical extract files by entity."""
         return find_files_by_entity(directory, prefix_to_entity, pattern=pattern)
+
+    def validate_extract_file(
+        self,
+        file_path: Union[Path, str],
+        required_columns: Optional[Collection[str]] = None,
+        delimiter: str = "$",
+    ) -> Set[str]:
+        """Validates that extract file exists, is non-empty, and contains expected headers."""
+        from raxtik_etl.sources.validation import validate_extract_file
+
+        return validate_extract_file(
+            file_path, required_columns=required_columns, delimiter=delimiter
+        )

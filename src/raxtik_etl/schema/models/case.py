@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import ClassVar, Optional
 
 from raxtik_etl.schema.base import (
@@ -79,11 +80,26 @@ class CanonicalCase(BaseCanonicalModel):
         category=TransformationCategory.G_DERIVED_STANDARDIZED,
         description="Human-readable label for report type",
     )
+    # Key Dates - Reported Verbatim, Standardized Imputed Dates, and Precision Flags
     event_date: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
         description="Date adverse event occurred (YYYYMMDD)",
+    )
+    standard_event_date: Optional[date] = Column(
+        "DATE",
+        nullable=True,
+        value_origin=ValueOrigin.NORMALIZED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Imputed/parsed date adverse event occurred",
+    )
+    event_date_precision: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Event date precision audit classification (EXACT, YEAR_MONTH, YEAR_ONLY, INVALID)",
     )
     manufacturer_date: Optional[str] = Column(
         "VARCHAR",
@@ -91,17 +107,105 @@ class CanonicalCase(BaseCanonicalModel):
         category=TransformationCategory.A_IDENTICAL,
         description="Date manufacturer received report (YYYYMMDD)",
     )
+    standard_manufacturer_date: Optional[date] = Column(
+        "DATE",
+        nullable=True,
+        value_origin=ValueOrigin.NORMALIZED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Imputed/parsed date manufacturer received report",
+    )
+    manufacturer_date_precision: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Manufacturer date precision classification",
+    )
     initial_regulatory_date: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
         category=TransformationCategory.C_ADDED_LATER,
         description="Date initial report received by regulatory agency (YYYYMMDD)",
     )
+    standard_initial_regulatory_date: Optional[date] = Column(
+        "DATE",
+        nullable=True,
+        value_origin=ValueOrigin.NORMALIZED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Imputed/parsed date initial report received by regulatory agency",
+    )
+    initial_regulatory_date_precision: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Initial regulatory date precision classification",
+    )
     latest_regulatory_date: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
         description="Date latest version received by regulatory agency (YYYYMMDD)",
+    )
+    standard_latest_regulatory_date: Optional[date] = Column(
+        "DATE",
+        nullable=True,
+        value_origin=ValueOrigin.NORMALIZED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Imputed/parsed date latest version received by regulatory agency",
+    )
+    latest_regulatory_date_precision: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Latest regulatory date precision classification",
+    )
+    report_date: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.A_IDENTICAL,
+        description="Date report was sent by reporter (YYYYMMDD)",
+    )
+    standard_report_date: Optional[date] = Column(
+        "DATE",
+        nullable=True,
+        value_origin=ValueOrigin.NORMALIZED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Imputed/parsed date report was sent by reporter",
+    )
+    report_date_precision: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Report date precision classification",
+    )
+    death_date: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.D_DEPRECATED_UNMAPPED,
+        description="Date patient died (YYYYMMDD)",
+    )
+    standard_death_date: Optional[date] = Column(
+        "DATE",
+        nullable=True,
+        value_origin=ValueOrigin.NORMALIZED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Imputed/parsed date patient died",
+    )
+    death_date_precision: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Death date precision classification",
+    )
+    confidentiality_flag: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.D_DEPRECATED_UNMAPPED,
+        description="Voluntary reporter confidentiality request flag (Y/N)",
     )
 
     # Report Source Flags & Classifications

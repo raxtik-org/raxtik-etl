@@ -24,6 +24,9 @@ def stream_download(
 ) -> None:
     """Stream an open HTTP response directly to disk with a tqdm progress bar.
 
+    Downloads to an ephemeral staging file (.tmp_<name>) and atomically replaces
+    target_path upon full completion to prevent leaving corrupted files if interrupted.
+
     Args:
         response: Open streaming requests.Response object.
         target_path: Destination file Path.
@@ -32,20 +35,26 @@ def stream_download(
     """
     total_size = int(response.headers.get("content-length", 0))
     bar_desc = desc or f"Downloading {target_path.name}"
-    with (
-        open(target_path, "wb") as f,
-        tqdm(
-            desc=bar_desc,
-            total=total_size if total_size > 0 else None,
-            unit="iB",
-            unit_scale=True,
-            unit_divisor=1024,
-        ) as bar,
-    ):
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:
-                size = f.write(chunk)
-                bar.update(size)
+    tmp_path = target_path.with_name(f".tmp_{target_path.name}")
+    try:
+        with (
+            open(tmp_path, "wb") as f,
+            tqdm(
+                desc=bar_desc,
+                total=total_size if total_size > 0 else None,
+                unit="iB",
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as bar,
+        ):
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    size = f.write(chunk)
+                    bar.update(size)
+        tmp_path.replace(target_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def download_file(

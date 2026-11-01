@@ -179,8 +179,8 @@ def test_07_code_dimension_tables_and_joins(con):
     unmapped_codes = con.execute("""
         SELECT DISTINCT o.outcome_code
         FROM outc o
-        LEFT JOIN _code_outcomes c ON o.outcome_code = c.outcome_code
-        WHERE c.outcome_code IS NULL
+        LEFT JOIN _code_outcomes c ON o.outcome_code = c.code
+        WHERE c.code IS NULL
     """).fetchall()
     assert len(unmapped_codes) == 0, f"Found unmapped outcome codes: {unmapped_codes}"
 
@@ -188,7 +188,7 @@ def test_07_code_dimension_tables_and_joins(con):
     joined_outcomes = con.execute("""
         SELECT COUNT(*)
         FROM outc o
-        JOIN _code_outcomes d ON o.outcome_code = d.outcome_code
+        JOIN _code_outcomes d ON o.outcome_code = d.code
     """).fetchone()[0]
     assert joined_outcomes == 57592
 
@@ -197,13 +197,13 @@ def test_08_provenance_completeness(con):
     """Every record must carry immutable provenance attributes."""
     missing_prov_demo = con.execute("""
         SELECT COUNT(*) FROM demo
-        WHERE _source_system IS NULL OR _source_release IS NULL OR _source_file IS NULL OR _source_signature_id IS NULL
+        WHERE _source_system IS NULL OR _data_period IS NULL OR _source_file IS NULL OR _source_signature_id IS NULL
     """).fetchone()[0]
     assert missing_prov_demo == 0
 
     missing_prov_drug = con.execute("""
         SELECT COUNT(*) FROM drug
-        WHERE _source_system IS NULL OR _source_release IS NULL OR _source_file IS NULL OR _source_signature_id IS NULL
+        WHERE _source_system IS NULL OR _data_period IS NULL OR _source_file IS NULL OR _source_signature_id IS NULL
     """).fetchone()[0]
     assert missing_prov_drug == 0
 

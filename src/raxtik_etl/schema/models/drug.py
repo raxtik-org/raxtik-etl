@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import ClassVar, Optional
 
 from raxtik_etl.schema.base import (
@@ -38,8 +39,8 @@ class CanonicalDrug(BaseCanonicalModel):
         category=TransformationCategory.H_RELATIONSHIP_KEY_CHANGE,
         description="Links to demo.case_id",
     )
-    drug_seq: int = Column(
-        "INTEGER",
+    drug_seq: str = Column(
+        "VARCHAR",
         is_primary_key=True,
         nullable=False,
         category=TransformationCategory.A_IDENTICAL,
@@ -115,8 +116,8 @@ class CanonicalDrug(BaseCanonicalModel):
         category=TransformationCategory.F_SEMANTIC_SPLIT,
         description="Dosing frequency (QD, BID, etc.)",
     )
-    cumulative_dose_amount: Optional[float] = Column(
-        "DOUBLE",
+    cumulative_dose_amount: Optional[str] = Column(
+        "VARCHAR",
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
         description="Cumulative dose taken before event",
@@ -164,6 +165,20 @@ class CanonicalDrug(BaseCanonicalModel):
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
         description="Product expiration date (YYYYMMDD)",
+    )
+    standard_expiration_date: Optional[date] = Column(
+        "DATE",
+        nullable=True,
+        value_origin=ValueOrigin.NORMALIZED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Imputed/parsed product expiration date",
+    )
+    expiration_date_precision: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Product expiration date precision classification",
     )
     regulatory_auth_num: Optional[str] = Column(
         "VARCHAR",

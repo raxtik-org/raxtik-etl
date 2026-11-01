@@ -58,7 +58,7 @@ def test_canonical_drug_verbatim_preservation():
     drug = CanonicalDrug(
         primary_id="10001",
         case_id="1000",
-        drug_seq=1,
+        drug_seq="1",
         reported_drug_name="TYLENOL EXTRA STRENGTH ( )",
         reported_active_ingredient=None,
         structural_clean_drug_name="TYLENOL EXTRA STRENGTH",

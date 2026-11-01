@@ -36,8 +36,8 @@ class CanonicalIndication(BaseCanonicalModel):
         category=TransformationCategory.H_RELATIONSHIP_KEY_CHANGE,
         description="Links to demo.case_id",
     )
-    indication_drug_seq: int = Column(
-        "INTEGER",
+    indication_drug_seq: str = Column(
+        "VARCHAR",
         is_primary_key=True,
         foreign_key="drug.drug_seq",
         nullable=False,
