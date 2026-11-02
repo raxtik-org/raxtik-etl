@@ -162,6 +162,11 @@ def execute_package_pipeline(
         "source_version",
         getattr(adapter, "version", None),
     )
+    source_license = (
+        getattr(load_result, "metadata", {}).get("source_data_license")
+        if hasattr(load_result, "metadata") and load_result.metadata
+        else None
+    )
     populate_package_metadata(
         con=con,
         data_period=data_period,
@@ -172,6 +177,7 @@ def execute_package_pipeline(
         source_version=source_lib_version,
         reference_tables=load_result.reference_tables,
         package_format_version=PACKAGE_FORMAT_VERSION,
+        source_data_license=source_license,
     )
 
     # 5. Register and apply source schema migrations

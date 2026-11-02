@@ -39,6 +39,7 @@ def populate_package_metadata(
     source_version: Optional[str] = None,
     reference_tables: Optional[Dict[str, List[Any]]] = None,
     package_format_version: str = "1.0.0",
+    source_data_license: Optional[str] = None,
 ) -> None:
     """Creates and populates all internal metadata and reference code lookup tables in DuckDB.
 
@@ -116,7 +117,7 @@ def populate_package_metadata(
         ("built_at", datetime.now(timezone.utc).isoformat(), "Timestamp package was compiled"),
         (
             "source_data_license",
-            "US Government Work / Public Domain (17 U.S.C. § 105)",
+            source_data_license or "US Government Work / Public Domain (17 U.S.C. § 105)",
             "License of raw adverse event observations",
         ),
         (
