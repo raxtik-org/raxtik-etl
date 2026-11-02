@@ -28,6 +28,16 @@ from raxtik_etl.schema.registry import (
 from raxtik_etl.transformations.normalization import OUTCOME_LABEL_MAPPING
 
 
+def get_code_license() -> str:
+    """Derives software code license dynamically from package metadata (pyproject.toml)."""
+    try:
+        from importlib.metadata import metadata
+
+        return metadata("raxtik-etl").get("License") or "AGPL-3.0-or-later"
+    except Exception:
+        return "AGPL-3.0-or-later"
+
+
 def populate_package_metadata(
     con: duckdb.DuckDBPyConnection,
     data_period: str,
@@ -40,6 +50,7 @@ def populate_package_metadata(
     reference_tables: Optional[Dict[str, List[Any]]] = None,
     package_format_version: str = "1.0.0",
     source_data_license: Optional[str] = None,
+    code_license: Optional[str] = None,
 ) -> None:
     """Creates and populates all internal metadata and reference code lookup tables in DuckDB.
 
@@ -99,7 +110,7 @@ def populate_package_metadata(
         ("source_name", actual_source_name, "Source data connector identifier"),
         (
             "source_version",
-            source_version or "unknown",
+            source_version,
             "Connector software library release version",
         ),
         ("source_schema_signature", signature_id, "Physical extract header signature"),
@@ -125,7 +136,11 @@ def populate_package_metadata(
             "Open Data Commons Attribution License (ODC-By 1.0)",
             "License of compiled, structured relational dataset",
         ),
-        ("code_license", "AGPL-3.0", "License of raxtik-etl transformation software"),
+        (
+            "code_license",
+            code_license or get_code_license(),
+            "License of raxtik-etl transformation software",
+        ),
     ]
     con.executemany("INSERT INTO _metadata VALUES (?, ?, ?);", metadata_entries)
 
