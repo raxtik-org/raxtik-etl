@@ -215,6 +215,12 @@ class CanonicalCase(BaseCanonicalModel):
         category=TransformationCategory.A_IDENTICAL,
         description="Report type code (DIR, EXP, PER, etc.)",
     )
+    report_code: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.A_IDENTICAL,
+        description="Report type code verbatim (DIR, EXP, PER, etc.)",
+    )
     report_type_label: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
@@ -228,7 +234,19 @@ class CanonicalCase(BaseCanonicalModel):
         category=TransformationCategory.A_IDENTICAL,
         description="15-day alert expedited flag (Y/N)",
     )
+    electronic_submission_flag: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.A_IDENTICAL,
+        description="Electronic submission flag (Y/N)",
+    )
     manufacturer_control_number: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.A_IDENTICAL,
+        description="Manufacturer internal control number",
+    )
+    manufacturer_num: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
@@ -239,6 +257,30 @@ class CanonicalCase(BaseCanonicalModel):
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
         description="Manufacturer name",
+    )
+    manufacturer_sender: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.A_IDENTICAL,
+        description="Manufacturer sender company name",
+    )
+    auth_num: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.C_ADDED_LATER,
+        description="Regulatory authorization number (Introduced 2014Q3)",
+    )
+    lit_ref: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.C_ADDED_LATER,
+        description="Literature reference text (Introduced 2014Q3)",
+    )
+    to_mfr: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.A_IDENTICAL,
+        description="Distributor made report available to manufacturer flag (Y/N)",
     )
     sender_type_code: Optional[str] = Column(
         "VARCHAR",
@@ -272,6 +314,12 @@ class CanonicalCase(BaseCanonicalModel):
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
         description="Patient age group code (NEO, INF, CHLD, ADOL, ADULT, ELD)",
+    )
+    reported_age_group_code: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        category=TransformationCategory.C_ADDED_LATER,
+        description="Reported age group code (alias of age_group_code)",
     )
     reported_sex_code: Optional[str] = Column(
         "VARCHAR",
