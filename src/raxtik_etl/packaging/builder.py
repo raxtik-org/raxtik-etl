@@ -149,7 +149,13 @@ def execute_package_pipeline(
     )
     load_result = adapter.extract_and_load(con, artifact)
 
-    # 3. Populate internal metadata tables and reference code tables dynamically
+    # 3. Attach case resolution view ('cases') so metadata profiler can validate deduplication
+    if hasattr(adapter, "get_case_resolution_sql"):
+        res_sql = adapter.get_case_resolution_sql()
+        if res_sql:
+            con.execute(res_sql)
+
+    # 4. Populate internal metadata tables, reference code tables (_code_*), and validations
     source_etl_version = getattr(adapter, "etl_version", "1.0.0")
     source_lib_version = getattr(
         adapter,
@@ -168,7 +174,7 @@ def execute_package_pipeline(
         package_format_version=PACKAGE_FORMAT_VERSION,
     )
 
-    # 4. Register and apply source schema migrations
+    # 5. Register and apply source schema migrations
     if hasattr(adapter, "get_migrations"):
         source_migs = adapter.get_migrations()
         if source_migs:
@@ -178,11 +184,7 @@ def execute_package_pipeline(
         con, source_name=getattr(adapter, "source_name", source_name)
     )
 
-    # 5. Attach SQL views via source adapter hooks (deduplication & analytical views)
-    if hasattr(adapter, "get_case_resolution_sql"):
-        res_sql = adapter.get_case_resolution_sql()
-        if res_sql:
-            con.execute(res_sql)
+    # 6. Attach analytical summary views (e.g. case_adverse_events_summary which joins _code_outcomes)
     if hasattr(adapter, "get_summary_views_sql"):
         views = adapter.get_summary_views_sql()
         if views:

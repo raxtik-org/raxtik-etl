@@ -25,6 +25,7 @@ from raxtik_etl.schema.registry import (
     CANONICAL_SCHEMA_VERSION,
     SCHEMA_REGISTRY,
 )
+from raxtik_etl.transformations.normalization import OUTCOME_LABEL_MAPPING
 
 
 def populate_package_metadata(
@@ -202,14 +203,6 @@ def populate_package_metadata(
         SELECT ROUND(AVG(CASE WHEN reported_sex_code IS NULL OR reported_sex_code IN ('UNK', 'NS') THEN 1.0 ELSE 0.0 END) * 100, 2) FROM demo;
     """)
 
-    death_outcomes = _scalar("""
-        SELECT COUNT(*) FROM outc WHERE outcome_code = 'DE';
-    """)
-
-    hosp_outcomes = _scalar("""
-        SELECT COUNT(*) FROM outc WHERE outcome_code = 'HO';
-    """)
-
     con.execute("""
         CREATE OR REPLACE TABLE _data_quality_report (
             metric_name VARCHAR PRIMARY KEY,
@@ -227,11 +220,49 @@ def populate_package_metadata(
         ("total_outcomes", str(total_outcomes), "COUNTS", now_ts),
         ("missing_age_percentage", f"{missing_age_pct}%", "MISSINGNESS", now_ts),
         ("missing_sex_percentage", f"{missing_sex_pct}%", "MISSINGNESS", now_ts),
-        ("death_outcome_count", str(death_outcomes), "DISTRIBUTIONS", now_ts),
-        ("hospitalization_outcome_count", str(hosp_outcomes), "DISTRIBUTIONS", now_ts),
     ]
 
-    # Primary key, composite primary key, and distinct report counts across all 7 canonical tables
+    # Validate Cases View Deduplication Contract
+    has_cases_view = (
+        _scalar("SELECT COUNT(*) FROM information_schema.views WHERE table_name = 'cases';") > 0
+    )
+    if has_cases_view:
+        cases_view_count = _scalar("SELECT COUNT(*) FROM cases;")
+        quality_metrics.append(("total_cases_view_rows", str(cases_view_count), "COUNTS", now_ts))
+        is_dedup_pass = cases_view_count == total_cases
+        quality_metrics.append(
+            (
+                "validation_cases_dedup_pass",
+                "PASS" if is_dedup_pass else "FAIL",
+                "VALIDATIONS",
+                now_ts,
+            )
+        )
+
+    # Dynamic clinical outcome distributions based on canonical mapping
+    outcome_counts: dict[str, int] = {}
+    for code, label in OUTCOME_LABEL_MAPPING.items():
+        cnt = _scalar(f"SELECT COUNT(*) FROM outc WHERE outcome_code = '{code}';")
+        outcome_counts[code] = cnt
+        code_slug = label.lower().split(" - ")[0].split(" / ")[0].replace(" ", "_")
+        quality_metrics.append(
+            (f"outcome_{code.lower()}_{code_slug}_count", str(cnt), "DISTRIBUTIONS", now_ts)
+        )
+
+    # Backward-compatible aliases derived from the mapping
+    quality_metrics.append(
+        ("death_outcome_count", str(outcome_counts.get("DE", 0)), "DISTRIBUTIONS", now_ts)
+    )
+    quality_metrics.append(
+        (
+            "hospitalization_outcome_count",
+            str(outcome_counts.get("HO", 0)),
+            "DISTRIBUTIONS",
+            now_ts,
+        )
+    )
+
+    # Primary key, composite primary key, distinct report, and referential integrity validations
     for model in CANONICAL_MODELS:
         tbl = model.__tablename__
         existing_cols = {row[1] for row in con.execute(f"PRAGMA table_info('{tbl}')").fetchall()}
@@ -247,10 +278,28 @@ def populate_package_metadata(
                 (f"distinct_primary_id_{tbl}", str(distinct_pids), "KEYS", now_ts)
             )
 
+            # Referential integrity check: every child row's primary_id must exist in demo.primary_id
+            if tbl != "demo":
+                orphaned = _scalar(
+                    f"SELECT COUNT(*) FROM {tbl} WHERE primary_id NOT IN (SELECT primary_id FROM demo);"
+                )
+                quality_metrics.append(
+                    (f"orphaned_rows_{tbl}", str(orphaned), "VALIDATIONS", now_ts)
+                )
+                quality_metrics.append(
+                    (
+                        f"validation_fk_integrity_{tbl}",
+                        "PASS" if orphaned == 0 else "FAIL",
+                        "VALIDATIONS",
+                        now_ts,
+                    )
+                )
+
         pk_cols = model.get_primary_keys()
         if all(c in existing_cols for c in pk_cols):
             pk_expr = ", ".join(pk_cols)
             distinct_pks = _scalar(f"SELECT COUNT(*) FROM (SELECT DISTINCT {pk_expr} FROM {tbl});")
+            dup_pks = tbl_rows - distinct_pks
             if len(pk_cols) > 1:
                 quality_metrics.append(
                     (f"distinct_composite_pk_{tbl}", str(distinct_pks), "PRIMARY_KEYS", now_ts)
@@ -258,12 +307,28 @@ def populate_package_metadata(
                 quality_metrics.append(
                     (f"composite_pk_columns_{tbl}", "+".join(pk_cols), "PRIMARY_KEYS", now_ts)
                 )
+                quality_metrics.append(
+                    (
+                        f"duplicate_composite_pk_rows_{tbl}",
+                        str(dup_pks),
+                        "VALIDATIONS",
+                        now_ts,
+                    )
+                )
             else:
                 quality_metrics.append(
                     (f"distinct_pk_{tbl}", str(distinct_pks), "PRIMARY_KEYS", now_ts)
                 )
                 quality_metrics.append(
                     (f"pk_columns_{tbl}", "+".join(pk_cols), "PRIMARY_KEYS", now_ts)
+                )
+                quality_metrics.append(
+                    (
+                        f"validation_pk_uniqueness_{tbl}",
+                        "PASS" if dup_pks == 0 else "FAIL",
+                        "VALIDATIONS",
+                        now_ts,
+                    )
                 )
 
     con.executemany("INSERT INTO _data_quality_report VALUES (?, ?, ?, ?);", quality_metrics)
