@@ -20,6 +20,7 @@ import duckdb
 
 from raxtik_etl import __version__
 from raxtik_etl.reference import RAXTIK_OUTCOME_SEMANTICS
+from raxtik_etl.schema.canonical import CANONICAL_MODELS
 from raxtik_etl.schema.registry import (
     CANONICAL_SCHEMA_VERSION,
     SCHEMA_REGISTRY,
@@ -229,6 +230,42 @@ def populate_package_metadata(
         ("death_outcome_count", str(death_outcomes), "DISTRIBUTIONS", now_ts),
         ("hospitalization_outcome_count", str(hosp_outcomes), "DISTRIBUTIONS", now_ts),
     ]
+
+    # Primary key, composite primary key, and distinct report counts across all 7 canonical tables
+    for model in CANONICAL_MODELS:
+        tbl = model.__tablename__
+        existing_cols = {row[1] for row in con.execute(f"PRAGMA table_info('{tbl}')").fetchall()}
+        if not existing_cols:
+            continue
+
+        tbl_rows = _scalar(f"SELECT COUNT(*) FROM {tbl};")
+        quality_metrics.append((f"total_{tbl}_rows", str(tbl_rows), "COUNTS", now_ts))
+
+        if "primary_id" in existing_cols:
+            distinct_pids = _scalar(f"SELECT COUNT(DISTINCT primary_id) FROM {tbl};")
+            quality_metrics.append(
+                (f"distinct_primary_id_{tbl}", str(distinct_pids), "KEYS", now_ts)
+            )
+
+        pk_cols = model.get_primary_keys()
+        if all(c in existing_cols for c in pk_cols):
+            pk_expr = ", ".join(pk_cols)
+            distinct_pks = _scalar(f"SELECT COUNT(*) FROM (SELECT DISTINCT {pk_expr} FROM {tbl});")
+            if len(pk_cols) > 1:
+                quality_metrics.append(
+                    (f"distinct_composite_pk_{tbl}", str(distinct_pks), "PRIMARY_KEYS", now_ts)
+                )
+                quality_metrics.append(
+                    (f"composite_pk_columns_{tbl}", "+".join(pk_cols), "PRIMARY_KEYS", now_ts)
+                )
+            else:
+                quality_metrics.append(
+                    (f"distinct_pk_{tbl}", str(distinct_pks), "PRIMARY_KEYS", now_ts)
+                )
+                quality_metrics.append(
+                    (f"pk_columns_{tbl}", "+".join(pk_cols), "PRIMARY_KEYS", now_ts)
+                )
+
     con.executemany("INSERT INTO _data_quality_report VALUES (?, ?, ?, ?);", quality_metrics)
 
     # 6. _source_files

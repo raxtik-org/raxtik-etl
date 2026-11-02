@@ -228,3 +228,29 @@ def test_10_clinical_sanity_and_outlier_ranges(con):
     # Outcome death count
     deaths = con.execute("SELECT COUNT(*) FROM outc WHERE outcome_code = 'DE'").fetchone()[0]
     assert deaths == 7286
+
+
+def test_11_primary_key_and_composite_pk_metadata_audit(con):
+    """Verify primary key and composite primary key audit metrics in _data_quality_report."""
+    metrics = dict(
+        con.execute("SELECT metric_name, metric_value FROM _data_quality_report").fetchall()
+    )
+
+    # 1. demo PK
+    assert metrics["distinct_primary_id_demo"] == "65902"
+    assert metrics["distinct_pk_demo"] == "65902"
+    assert metrics["pk_columns_demo"] == "primary_id"
+
+    # 2. drug Composite PK
+    assert metrics["distinct_primary_id_drug"] == "65902"
+    assert metrics["distinct_composite_pk_drug"] == "235361"
+    assert metrics["composite_pk_columns_drug"] == "primary_id+drug_seq"
+
+    # 3. reac Composite PK
+    assert metrics["distinct_primary_id_reac"] == "65902"
+    assert metrics["distinct_composite_pk_reac"] == "264410"
+
+    # 4. outc Composite PK
+    assert metrics["distinct_primary_id_outc"] == "45221"
+    assert metrics["distinct_composite_pk_outc"] == "57592"
+    assert metrics["composite_pk_columns_outc"] == "primary_id+outcome_code"
