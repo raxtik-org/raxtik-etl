@@ -620,8 +620,10 @@ def inspect_cmd(
                 ).fetchall()
             }
             con.close()
-        except Exception:
-            pass
+        except duckdb.Error as err:
+            console.print(
+                f"[yellow]Warning: Could not introspect database catalog in '{candidate_path.name}': {err}[/yellow]"
+            )
 
         # Case A: Consolidated dataset contains _consolidation_quality_report and case_lineage
         if "_consolidation_quality_report" in tables or "case_lineage" in tables:

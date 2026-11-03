@@ -6,11 +6,14 @@ under the group `raxtik_etl.sources`.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
-from importlib.metadata import entry_points, version
+from importlib.metadata import PackageNotFoundError, entry_points, version
 from typing import Dict, Type
 
 from raxtik_etl.sources.protocol import SourceAdapter
+
+logger = logging.getLogger(__name__)
 
 ENTRY_POINT_GROUP = "raxtik_etl.sources"
 
@@ -33,8 +36,8 @@ def get_available_sources() -> Dict[str, Type[SourceAdapter]]:
         try:
             adapter_cls = ep.load()
             discovered[ep.name] = adapter_cls
-        except Exception:
-            # Skip invalid plugins but don't crash discovery
+        except (ImportError, AttributeError, ValueError) as err:
+            logger.warning("Could not load source connector plugin '%s': %s", ep.name, err)
             continue
     return discovered
 
@@ -69,10 +72,13 @@ def get_source_adapter(source_name: str) -> SourceAdapter:
         try:
             mod_pkg = adapter_cls.__module__.split(".")[0]
             adapter.source_version = version(mod_pkg)
-        except Exception:
+        except PackageNotFoundError:
             try:
                 adapter.source_version = version(f"raxtik-source-{source_name}")
-            except Exception:
-                pass
+            except PackageNotFoundError:
+                logger.debug(
+                    "Could not resolve version for source '%s' from installed distribution metadata",
+                    source_name,
+                )
 
     return adapter

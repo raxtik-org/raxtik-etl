@@ -14,6 +14,7 @@ Example:
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from importlib.metadata import entry_points
 from pathlib import Path
@@ -29,6 +30,7 @@ from raxtik_etl.distribution.huggingface import (
     get_default_package_dir,
 )
 
+logger = logging.getLogger(__name__)
 console = Console()
 ENTRY_POINT_CLIENT_GROUP = "raxtik_etl.clients"
 
@@ -346,8 +348,10 @@ def get_dataset_client(source_name: str) -> Type[BaseDataset]:
             try:
                 client_cls = ep.load()
                 return client_cls
-            except Exception:
-                pass
+            except (ImportError, AttributeError, ValueError) as err:
+                logger.warning(
+                    "Could not load specialized client plugin for '%s': %s", source_name, err
+                )
     return BaseDataset
 
 

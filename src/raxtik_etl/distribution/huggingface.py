@@ -7,6 +7,7 @@ Designed with zero-auth public downloads:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -14,6 +15,8 @@ from typing import List, Optional, Sequence, Union
 
 import requests
 from rich.console import Console
+
+logger = logging.getLogger(__name__)
 
 console = Console()
 
@@ -77,8 +80,8 @@ def resolve_hf_revision(
             resp = requests.head(check_url, timeout=max(timeout, 5), allow_redirects=True)  # nosec B113
             if resp.status_code == 200:
                 return tag_candidate
-        except Exception:
-            pass
+        except requests.RequestException as err:
+            logger.debug("HF tag probe failed for '%s': %s", tag_candidate, err)
 
     return "main"
 
@@ -154,8 +157,8 @@ def _fetch_remote_hf_sha256(
                 match = re.search(r"([a-f0-9]{64})", resp.text.strip(), re.IGNORECASE)
                 if match:
                     return match.group(1).lower()
-        except Exception:
-            pass
+        except requests.RequestException as err:
+            logger.debug("Failed to fetch companion .sha256 from %s: %s", url, err)
 
     # 2. Try git LFS pointer header (X-Linked-ETag / ETag)
     for path_candidate in candidates:
@@ -167,8 +170,8 @@ def _fetch_remote_hf_sha256(
                 match = re.search(r"([a-f0-9]{64})", val, re.IGNORECASE)
                 if match:
                     return match.group(1).lower()
-        except Exception:
-            pass
+        except requests.RequestException as err:
+            logger.debug("Failed to read LFS ETag headers from %s: %s", url, err)
 
     return None
 
@@ -291,7 +294,8 @@ def download_package_from_hf(
                     response = resp
                     rel_path = cand
                     break
-            except Exception:
+            except requests.RequestException as err:
+                logger.debug("Candidate download failed for %s: %s", url, err)
                 continue
 
         if response is None and resolved_revision != "main":
@@ -307,7 +311,10 @@ def download_package_from_hf(
                         rel_path = cand
                         resolved_revision = "main"
                         break
-                except Exception:
+                except requests.RequestException as err:
+                    logger.debug(
+                        "Main fallback candidate download failed for %s: %s", url_main, err
+                    )
                     continue
 
         if response is None:
@@ -511,8 +518,8 @@ def upload_package_to_hf(
             if force:
                 try:
                     api.delete_tag(repo_id=repo_id, tag=tag, repo_type="dataset")
-                except Exception:
-                    pass
+                except Exception as del_err:
+                    logger.debug("Existing tag '%s' not deleted (may not exist): %s", tag, del_err)
             api.create_tag(
                 repo_id=repo_id,
                 tag=tag,
@@ -565,8 +572,8 @@ def tag_hf_dataset(
     api = HfApi(token=auth_token)
     try:
         api.delete_tag(repo_id=repo_id, tag=tag, repo_type="dataset")
-    except Exception:
-        pass
+    except Exception as del_err:
+        logger.debug("Existing tag '%s' not deleted (may not exist): %s", tag, del_err)
     api.create_tag(
         repo_id=repo_id,
         tag=tag,
