@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import fnmatch
 from pathlib import Path
-from typing import Dict, List, Mapping, Union
+from typing import Dict, List, Mapping, Optional, Union
+
+from raxtik_etl.sources.temporal import normalize_quarter
 
 
 def find_files_by_entity(
@@ -47,3 +49,49 @@ def find_files_by_entity(
                 break
 
     return {k: sorted(v) for k, v in categorized.items() if v}
+
+
+def find_cached_archive(
+    directory: Union[Path, str],
+    data_period: str,
+    source_name: Optional[str] = None,
+) -> Optional[Path]:
+    """Finds an existing cached zip archive for a quarterly data period.
+
+    Supports source-partitioned cache directories (e.g. `raw_archives/faers/`)
+    as well as flat archive directories.
+
+    Args:
+        directory: Directory containing raw archives.
+        data_period: Quarterly period string (e.g. '2004Q1').
+        source_name: Optional source connector name (e.g. 'faers').
+
+    Returns:
+        Path to matching archive file, or None if not found.
+    """
+    base_dir = Path(directory)
+    if not base_dir.exists():
+        return None
+
+    search_dirs: list[Path] = []
+    if source_name:
+        source_dir = base_dir / source_name.lower().strip()
+        if source_dir.is_dir():
+            search_dirs.append(source_dir)
+    search_dirs.append(base_dir)
+
+    try:
+        target_period = normalize_quarter(data_period)
+    except ValueError:
+        return None
+
+    for s_dir in search_dirs:
+        for f in s_dir.iterdir():
+            if not f.is_file() or not f.name.lower().endswith(".zip") or f.stat().st_size == 0:
+                continue
+            try:
+                if normalize_quarter(f.name) == target_period:
+                    return f
+            except ValueError:
+                continue
+    return None

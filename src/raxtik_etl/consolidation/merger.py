@@ -18,7 +18,10 @@ import duckdb
 from rich.console import Console
 from rich.table import Table
 
-from raxtik_etl.packaging.builder import PACKAGE_OUTPUT_DIR
+from raxtik_etl.packaging.builder import (
+    PACKAGE_OUTPUT_DIR,
+    cleanup_staging_artifacts,
+)
 from raxtik_etl.schema.registry import CANONICAL_TABLES
 from raxtik_etl.sources.registry import get_source_adapter
 from raxtik_etl.sources.temporal import (
@@ -66,10 +69,7 @@ def build_consolidated_package(
     tmp_duckdb = out_dir / f".tmp_{duckdb_path.name}"
     tmp_parquet = out_dir / f".tmp_{parquet_dir.name}"
 
-    if tmp_duckdb.exists():
-        tmp_duckdb.unlink()
-    if tmp_parquet.exists():
-        shutil.rmtree(tmp_parquet, ignore_errors=True)
+    cleanup_staging_artifacts(tmp_duckdb=tmp_duckdb, tmp_parquet=tmp_parquet)
 
     console.print(
         f"[bold cyan]Consolidating Packages [{periods_clean[0]} .. {periods_clean[-1]}] ({len(periods_clean)} periods)...[/bold cyan]"
@@ -91,7 +91,9 @@ def build_consolidated_package(
 
             files_sql = ", ".join(f"'{f}'" for f in parquet_files)
             console.print(f"  [dim]Consolidating table:[/dim] [bold]{table_name}[/bold]")
-            con.execute(f"CREATE TABLE {table_name} AS SELECT * FROM read_parquet([{files_sql}]);")
+            con.execute(
+                f"CREATE TABLE {table_name} AS SELECT * FROM read_parquet([{files_sql}]);"  # nosec B608
+            )
 
         # 2. Copy reference codelists from the first quarterly package
         first_pkg_db = pkg_dir / f"{source_name}_{periods_clean[0]}.duckdb"
@@ -114,7 +116,7 @@ def build_consolidated_package(
             }
             for rt in ref_tables:
                 if rt in existing_ref:
-                    con.execute(f"CREATE TABLE {rt} AS SELECT * FROM ref_pkg.{rt};")
+                    con.execute(f"CREATE TABLE {rt} AS SELECT * FROM ref_pkg.{rt};")  # nosec B608
             con.execute("DETACH ref_pkg;")
 
         # 3. Resolve adapter and build Longitudinal Case Lineage Table
@@ -197,10 +199,7 @@ def build_consolidated_package(
             )
 
     except Exception:
-        if tmp_duckdb.exists():
-            tmp_duckdb.unlink()
-        if tmp_parquet.exists():
-            shutil.rmtree(tmp_parquet, ignore_errors=True)
+        cleanup_staging_artifacts(tmp_duckdb=tmp_duckdb, tmp_parquet=tmp_parquet)
         raise
     finally:
         con.close()

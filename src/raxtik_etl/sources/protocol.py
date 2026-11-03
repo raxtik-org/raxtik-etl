@@ -35,6 +35,18 @@ class SourceArtifact:
     target_schema_version: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self.path = Path(self.path)
+        if not self.path.exists():
+            raise FileNotFoundError(f"Source artifact not found at {self.path}")
+        if self.data_period:
+            from raxtik_etl.sources.temporal import normalize_quarter
+
+            try:
+                self.data_period = normalize_quarter(self.data_period)
+            except ValueError:
+                self.data_period = self.data_period.upper().strip()
+
 
 @dataclass(slots=True)
 class SourceLoadResult:

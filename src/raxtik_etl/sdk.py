@@ -56,6 +56,7 @@ class BaseDataset:
         hf_repo: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT,
         revision: Optional[str] = None,
+        tier: str = "bronze",
     ) -> None:
         """Initializes a local dataset connection, optionally downloading if missing.
 
@@ -67,6 +68,7 @@ class BaseDataset:
             hf_repo: Optional Hugging Face dataset repository ID override.
             timeout: HTTP request timeout in seconds when downloading.
             revision: Hugging Face Git revision or tag (e.g., 'main' or 'v0.1.0').
+            tier: Data lake tier on Hugging Face (e.g. 'bronze', 'silver', 'gold'). Defaults to 'bronze'.
 
         Raises:
             ValueError: If data_period is empty.
@@ -82,6 +84,7 @@ class BaseDataset:
         )
         self.pkg_dir = Path(package_dir) if package_dir else get_default_package_dir()
         self.duckdb_path = self.pkg_dir / f"{self.source}_{self.data_period}.duckdb"
+        self.tier = tier
 
         if not self.duckdb_path.exists():
             if download_if_missing:
@@ -96,6 +99,7 @@ class BaseDataset:
                     source_name=self.source,
                     timeout=timeout,
                     revision=revision,
+                    tier=self.tier,
                 )
             else:
                 raise FileNotFoundError(
@@ -116,6 +120,7 @@ class BaseDataset:
         hf_repo: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT,
         revision: Optional[str] = None,
+        tier: str = "bronze",
     ) -> BaseDataset:
         """Loads a safety data package, automatically downloading from Hugging Face Hub if not present locally.
 
@@ -126,6 +131,7 @@ class BaseDataset:
             hf_repo: Optional Hugging Face dataset repository override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag (defaults to version tag or 'main').
+            tier: Data lake tier on Hugging Face (e.g. 'bronze', 'silver', 'gold'). Defaults to 'bronze'.
 
         Returns:
             Instantiated BaseDataset connected to downloaded DuckDB package.
@@ -138,6 +144,7 @@ class BaseDataset:
             hf_repo=hf_repo,
             timeout=timeout,
             revision=revision,
+            tier=tier,
         )
 
     def compute_sha256(self) -> str:
@@ -207,6 +214,10 @@ class BaseDataset:
         """
         return self._con.sql(sql).pl()
 
+    def _table_query(self, table: str, limit: Optional[int] = None) -> pl.DataFrame:
+        limit_clause = f" LIMIT {int(limit)}" if limit is not None else ""
+        return self._con.sql(f"SELECT * FROM {table}{limit_clause}").pl()  # nosec B608
+
     def reports(self, limit: Optional[int] = None) -> pl.DataFrame:
         """Returns the immutable historical submission reports (DEMO table).
 
@@ -216,8 +227,7 @@ class BaseDataset:
         Returns:
             polars.DataFrame containing DEMO table records.
         """
-        limit_clause = f"LIMIT {limit}" if limit else ""
-        return self.query(f"SELECT * FROM demo {limit_clause}")
+        return self._table_query("demo", limit)
 
     def cases(self, limit: Optional[int] = None) -> pl.DataFrame:
         """Returns the deterministic latest-case resolution view.
@@ -228,8 +238,7 @@ class BaseDataset:
         Returns:
             polars.DataFrame containing latest deduplicated case records.
         """
-        limit_clause = f"LIMIT {limit}" if limit else ""
-        return self.query(f"SELECT * FROM cases {limit_clause}")
+        return self._table_query("cases", limit)
 
     def drugs(self, limit: Optional[int] = None) -> pl.DataFrame:
         """Returns reported drug products.
@@ -240,8 +249,7 @@ class BaseDataset:
         Returns:
             polars.DataFrame containing DRUG table records.
         """
-        limit_clause = f"LIMIT {limit}" if limit else ""
-        return self.query(f"SELECT * FROM drug {limit_clause}")
+        return self._table_query("drug", limit)
 
     def reactions(self, limit: Optional[int] = None) -> pl.DataFrame:
         """Returns reported adverse events.
@@ -252,8 +260,7 @@ class BaseDataset:
         Returns:
             polars.DataFrame containing REAC table records.
         """
-        limit_clause = f"LIMIT {limit}" if limit else ""
-        return self.query(f"SELECT * FROM reac {limit_clause}")
+        return self._table_query("reac", limit)
 
     def outcomes(self, limit: Optional[int] = None) -> pl.DataFrame:
         """Returns patient outcomes.
@@ -264,8 +271,7 @@ class BaseDataset:
         Returns:
             polars.DataFrame containing OUTC table records.
         """
-        limit_clause = f"LIMIT {limit}" if limit else ""
-        return self.query(f"SELECT * FROM outc {limit_clause}")
+        return self._table_query("outc", limit)
 
     def metadata(self) -> Dict[str, str]:
         """Returns package metadata as a dictionary.
@@ -359,6 +365,7 @@ class Dataset(BaseDataset):
         hf_repo: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT,
         revision: Optional[str] = None,
+        tier: str = "bronze",
     ) -> BaseDataset:  # type: ignore[misc]
         """Instantiates either a specialized source client subclass or BaseDataset.
 
@@ -370,6 +377,7 @@ class Dataset(BaseDataset):
             hf_repo: Optional Hugging Face dataset repository ID override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag.
+            tier: Data lake tier on Hugging Face (defaults to 'bronze').
 
         Returns:
             Configured dataset client instance.
@@ -378,11 +386,13 @@ class Dataset(BaseDataset):
         if target_cls is not cls and target_cls is not BaseDataset:
             return target_cls(
                 data_period=data_period,
+                source=source,
                 package_dir=package_dir,
                 download_if_missing=download_if_missing,
                 hf_repo=hf_repo,
                 timeout=timeout,
                 revision=revision,
+                tier=tier,
             )
         instance = super().__new__(cls)
         return instance
@@ -396,6 +406,7 @@ class Dataset(BaseDataset):
         hf_repo: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT,
         revision: Optional[str] = None,
+        tier: str = "bronze",
     ) -> BaseDataset:
         """Loads a safety data package, automatically downloading from Hugging Face Hub if not present locally.
 
@@ -406,6 +417,7 @@ class Dataset(BaseDataset):
             hf_repo: Optional Hugging Face dataset repository override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag (defaults to version tag or 'main').
+            tier: Data lake tier on Hugging Face (defaults to 'bronze').
 
         Returns:
             Instantiated Dataset connected to downloaded DuckDB package.
@@ -419,10 +431,12 @@ class Dataset(BaseDataset):
         ):
             return target_cls.from_hf(
                 data_period=data_period,
+                source=src,
                 package_dir=package_dir,
                 hf_repo=hf_repo,
                 timeout=timeout,
                 revision=revision,
+                tier=tier,
             )
         return cls(
             data_period=data_period,
@@ -432,4 +446,5 @@ class Dataset(BaseDataset):
             hf_repo=hf_repo,
             timeout=timeout,
             revision=revision,
+            tier=tier,
         )

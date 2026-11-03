@@ -56,7 +56,7 @@ class CanonicalCase(BaseCanonicalModel):
     case_version_source: str = Column(
         "VARCHAR",
         nullable=False,
-        default="SOURCE_REPORTED",
+        default=ValueOrigin.SOURCE_REPORTED.value,
         value_origin=ValueOrigin.DERIVED,
         category=TransformationCategory.G_DERIVED_STANDARDIZED,
         description="Version determination methodology",

@@ -7,6 +7,7 @@ import pytest
 from raxtik_etl.distribution.huggingface import (
     DEFAULT_HF_REPO,
     download_package_from_hf,
+    get_hf_path_candidates,
     upload_package_to_hf,
 )
 
@@ -108,3 +109,106 @@ def test_resolve_hf_revision(monkeypatch):
     # Fallback to 'main' when tag does not exist
     monkeypatch.delenv("RAXTIK_HF_REVISION", raising=False)
     assert resolve_hf_revision("nonexistent-org/nonexistent-repo-12345") == "main"
+
+
+def test_upload_package_tiered_layout(tmp_path: Path, monkeypatch):
+    """Verify that uploading with tier='bronze' produces 'bronze/2004/faers_2004Q1.duckdb'."""
+    pkg_file = tmp_path / "faers_2004Q1.duckdb"
+    pkg_file.write_bytes(b"mock duckdb binary")
+    sha_file = tmp_path / "faers_2004Q1.duckdb.sha256"
+    sha_file.write_text("a" * 64)
+
+    p_dir = tmp_path / "faers_2004Q1.parquet"
+    p_dir.mkdir()
+    (p_dir / "demo.parquet").write_bytes(b"mock parquet")
+
+    captured_operations = []
+
+    class DummyApi:
+        def __init__(self, token=None):
+            self.token = token
+
+        def create_commit(self, repo_id, repo_type, operations, commit_message):
+            captured_operations.extend(operations)
+
+    import huggingface_hub
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", DummyApi)
+
+    upload_package_to_hf(
+        "2004Q1",
+        package_dir=tmp_path,
+        token="dummy_token",
+        include_parquet=True,
+        tier="bronze",
+    )
+
+    repo_paths = [op.path_in_repo for op in captured_operations]
+    assert "bronze/2004/faers_2004Q1.duckdb" in repo_paths
+    assert "bronze/2004/faers_2004Q1.duckdb.sha256" in repo_paths
+    assert "bronze/2004/faers_2004Q1.parquet/demo.parquet" in repo_paths
+
+
+def test_cli_tiered_upload_and_download_aliases(tmp_path: Path):
+    """Verify that 'upload' and 'download' aliases work cleanly and route internally."""
+    from typer.testing import CliRunner
+
+    from raxtik_etl.cli import app
+
+    runner = CliRunner()
+    # Test upload alias with --help
+    res_up = runner.invoke(app, ["upload", "--help"])
+    assert res_up.exit_code == 0
+    assert "--data-period" in res_up.output
+
+    # Test download alias with --help
+    res_down = runner.invoke(app, ["download", "--help"])
+    assert res_down.exit_code == 0
+    assert "--data-period" in res_down.output
+
+
+@pytest.mark.parametrize(
+    ("filename", "subfolder", "tier", "expected"),
+    [
+        (
+            "faers_2004Q1.duckdb",
+            "2004",
+            "bronze",
+            [
+                "bronze/2004/faers_2004Q1.duckdb",
+                "bronze/faers_2004Q1.duckdb",
+                "2004/faers_2004Q1.duckdb",
+                "faers_2004Q1.duckdb",
+            ],
+        ),
+        (
+            "faers_2004Q1.duckdb",
+            "2004",
+            None,
+            [
+                "2004/faers_2004Q1.duckdb",
+                "faers_2004Q1.duckdb",
+            ],
+        ),
+        (
+            "faers_consolidated.duckdb",
+            None,
+            "silver",
+            [
+                "silver/faers_consolidated.duckdb",
+                "faers_consolidated.duckdb",
+            ],
+        ),
+        (
+            "faers_root.duckdb",
+            None,
+            None,
+            [
+                "faers_root.duckdb",
+            ],
+        ),
+    ],
+)
+def test_get_hf_path_candidates_parametrized(filename, subfolder, tier, expected):
+    candidates = get_hf_path_candidates(filename=filename, subfolder=subfolder, tier=tier)
+    assert candidates == expected

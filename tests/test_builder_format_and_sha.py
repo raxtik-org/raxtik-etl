@@ -7,7 +7,9 @@ import duckdb
 import pytest
 
 from raxtik_etl.packaging.builder import (
+    PackageFormat,
     build_quarterly_package,
+    cleanup_staging_artifacts,
     compute_sha256,
 )
 from raxtik_etl.sdk import BaseDataset
@@ -107,9 +109,10 @@ def test_compute_sha256(tmp_path: Path):
 @pytest.mark.parametrize(
     ("pkg_format", "delete_ascii", "expect_duckdb", "expect_parquet", "expect_zip_deleted"),
     [
+        (PackageFormat.DUCKDB, False, True, False, False),
+        (PackageFormat.PARQUET, False, False, True, False),
+        (PackageFormat.BOTH, True, True, True, True),
         ("duckdb", False, True, False, False),
-        ("parquet", False, False, True, False),
-        ("both", True, True, True, True),
     ],
 )
 def test_builder_formats_and_cleanup(
@@ -153,7 +156,11 @@ def test_builder_formats_and_cleanup(
     assert dummy_zip.exists() != expect_zip_deleted
 
 
-def test_builder_invalid_format(tmp_path: Path):
+@pytest.mark.parametrize(
+    "invalid_format",
+    ["invalid_format", "csv", "json", "xml", "123"],
+)
+def test_builder_invalid_format(tmp_path: Path, invalid_format: str):
     dummy_zip = tmp_path / "mock_2024q1.zip"
     dummy_zip.write_bytes(b"mock_zip_content")
 
@@ -164,7 +171,7 @@ def test_builder_invalid_format(tmp_path: Path):
             source_name="mock",
             adapter=MockAdapter(),
             output_dir=tmp_path / "packages",
-            format="invalid_format",
+            format=invalid_format,
         )
 
 
@@ -211,7 +218,7 @@ def test_metadata_records_source_and_engine_versions(tmp_path: Path):
         source_name="mock",
         adapter=MockAdapter(),
         output_dir=out_dir,
-        format="duckdb",
+        format=PackageFormat.DUCKDB,
         delete_ascii=False,
     )
 
@@ -229,3 +236,34 @@ def test_metadata_records_source_and_engine_versions(tmp_path: Path):
     assert len(migrations) >= 1
     assert migrations[0][0] == "M001_INITIAL_CANONICAL"
     assert migrations[0][1] == "1.0.0"
+
+
+@pytest.mark.parametrize(
+    ("create_duckdb", "create_parquet", "pass_none"),
+    [
+        (False, False, True),  # Safe with None, None
+        (False, False, False),  # Safe with non-existent paths
+        (True, False, False),  # Cleans up only DuckDB file
+        (False, True, False),  # Cleans up only Parquet directory
+        (True, True, False),  # Cleans up both
+    ],
+)
+def test_cleanup_staging_artifacts(
+    tmp_path: Path, create_duckdb: bool, create_parquet: bool, pass_none: bool
+):
+    tmp_duckdb = tmp_path / ".tmp_test.duckdb"
+    tmp_parquet = tmp_path / ".tmp_test.parquet"
+
+    if create_duckdb:
+        tmp_duckdb.write_bytes(b"duckdb")
+    if create_parquet:
+        tmp_parquet.mkdir()
+        (tmp_parquet / "part.parquet").write_bytes(b"parquet")
+
+    p_duck = None if pass_none else tmp_duckdb
+    p_parq = None if pass_none else tmp_parquet
+
+    cleanup_staging_artifacts(p_duck, p_parq)
+
+    assert not tmp_duckdb.exists()
+    assert not tmp_parquet.exists()

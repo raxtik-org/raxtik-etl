@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Sequence, Union
 
 import requests
 from rich.console import Console
@@ -74,7 +74,7 @@ def resolve_hf_revision(
             check_url = (
                 f"https://huggingface.co/datasets/{repo_id}/resolve/{tag_candidate}/.gitattributes"
             )
-            resp = requests.head(check_url, timeout=min(timeout, 5), allow_redirects=True)
+            resp = requests.head(check_url, timeout=max(timeout, 5), allow_redirects=True)  # nosec B113
             if resp.status_code == 200:
                 return tag_candidate
         except Exception:
@@ -83,28 +83,71 @@ def resolve_hf_revision(
     return "main"
 
 
+def get_hf_path_candidates(
+    filename: str,
+    subfolder: Optional[str] = None,
+    tier: Optional[str] = None,
+) -> List[str]:
+    """Generates prioritized candidate repository paths for a Hugging Face artifact.
+
+    Resolution hierarchy:
+      1. {tier}/{subfolder}/{filename} (if both tier and subfolder are present)
+      2. {tier}/{filename}             (if tier is present)
+      3. {subfolder}/{filename}        (if subfolder is present)
+      4. {filename}                    (root fallback)
+
+    Args:
+        filename: Base name of the file (e.g. 'faers_2004Q1.duckdb').
+        subfolder: Subdirectory within tier/root (e.g. '2004', 'merged').
+        tier: Data lake tier (e.g. 'bronze', 'silver', 'gold').
+
+    Returns:
+        Deduplicated list of candidate paths in priority order.
+    """
+    candidates: List[str] = []
+    if tier and subfolder:
+        candidates.append(f"{tier}/{subfolder}/{filename}")
+    if tier:
+        candidates.append(f"{tier}/{filename}")
+    if subfolder:
+        candidates.append(f"{subfolder}/{filename}")
+    candidates.append(filename)
+    return list(dict.fromkeys(candidates))
+
+
 def _fetch_remote_hf_sha256(
     repo_id: str,
-    rel_path: str,
-    filename: str,
+    target_or_candidates: Union[str, Sequence[str]],
+    filename: Optional[str] = None,
     revision: str = "main",
     timeout: int = DEFAULT_HTTP_TIMEOUT,
+    tier: Optional[str] = "bronze",
 ) -> Optional[str]:
     """Attempts to fetch the expected SHA-256 hash for a file from Hugging Face Hub.
 
     Args:
         repo_id: Hugging Face dataset repository ID.
-        rel_path: Subfolder relative path in the repository.
+        target_or_candidates: Resolved relative path, sequence of candidates, or subfolder path.
         filename: Base filename of the target artifact.
         revision: Target Git revision or tag.
         timeout: HTTP timeout in seconds.
+        tier: Data lake tier (e.g. 'bronze', 'silver', 'gold').
 
     Returns:
         Lower-cased 64-character hexadecimal SHA-256 string if resolved, else None.
     """
+    if isinstance(target_or_candidates, str):
+        candidates = [target_or_candidates]
+        if filename and filename != target_or_candidates:
+            candidates.append(filename)
+    else:
+        candidates = list(target_or_candidates)
+
     # 1. Try companion .sha256 file from HF
-    for path_candidate in [f"{rel_path}.sha256", f"{filename}.sha256"]:
-        url = f"https://huggingface.co/datasets/{repo_id}/resolve/{revision}/{path_candidate}"
+    for path_candidate in candidates:
+        url = (
+            f"https://huggingface.co/datasets/{repo_id}/resolve/{revision}/{path_candidate}.sha256"
+        )
         try:
             resp = requests.get(url, timeout=timeout)
             if resp.status_code == 200 and resp.text:
@@ -115,7 +158,7 @@ def _fetch_remote_hf_sha256(
             pass
 
     # 2. Try git LFS pointer header (X-Linked-ETag / ETag)
-    for path_candidate in [rel_path, filename]:
+    for path_candidate in candidates:
         url = f"https://huggingface.co/datasets/{repo_id}/resolve/{revision}/{path_candidate}"
         try:
             head_resp = requests.head(url, timeout=timeout, allow_redirects=False)
@@ -138,11 +181,13 @@ def download_package_from_hf(
     force: bool = False,
     timeout: int = DEFAULT_HTTP_TIMEOUT,
     revision: Optional[str] = None,
+    tier: Optional[str] = "bronze",
 ) -> Path:
     """Downloads a compiled .duckdb safety package from Hugging Face Hub.
 
     Publicly accessible without any authentication token or Hugging Face account.
     Automatically fetches and verifies the SHA-256 integrity checksum from Hugging Face.
+    Supports lakehouse tiers (bronze, silver, gold) and falls back cleanly across paths.
 
     Args:
         data_period_or_name: Period identifier (e.g. '2004Q1') or package name (e.g. 'faers_2004_2006_consolidated').
@@ -152,6 +197,7 @@ def download_package_from_hf(
         force: Whether to overwrite existing local file.
         timeout: HTTP timeout in seconds for requests (defaults to RAXTIK_HTTP_TIMEOUT or 120).
         revision: Specific Git revision or tag (defaults to version tag matching package, or 'main').
+        tier: Data lake tier (e.g. 'bronze', 'silver', 'gold'). Defaults to 'bronze'.
 
     Returns:
         Path to downloaded DuckDB package.
@@ -168,7 +214,9 @@ def download_package_from_hf(
 
     match = re.search(r"(\d{4})Q[1-4]", rel_upper)
     subfolder = match.group(1) if match else ("merged" if "merged" in rel_upper.lower() else "")
-    rel_path = f"{subfolder}/{filename}" if subfolder else filename
+
+    candidates = get_hf_path_candidates(filename=filename, subfolder=subfolder, tier=tier)
+    rel_path = candidates[0]
 
     dest_file = target_dir / filename
     if dest_file.exists() and not force:
@@ -184,26 +232,27 @@ def download_package_from_hf(
         from huggingface_hub.utils import EntryNotFoundError  # type: ignore
 
         console.print(
-            f"[bold cyan]Downloading {filename} (revision: {resolved_revision}) from Hugging Face Hub ({repo_id})...[/bold cyan]"
+            f"[bold cyan]Downloading {filename} (tier: {tier or 'root'}, revision: {resolved_revision}) from Hugging Face Hub ({repo_id})...[/bold cyan]"
         )
-        try:
-            downloaded_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=rel_path,
-                revision=resolved_revision,
-                repo_type="dataset",
-                local_dir=str(target_dir),
-                force_download=force,
-            )
-        except (EntryNotFoundError, FileNotFoundError):
-            # Fall back to root path if not in year subfolder
-            downloaded_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=filename,
-                revision=resolved_revision,
-                repo_type="dataset",
-                local_dir=str(target_dir),
-                force_download=force,
+        downloaded_path = None
+        for cand in candidates:
+            try:
+                downloaded_path = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=cand,
+                    revision=resolved_revision,
+                    repo_type="dataset",
+                    local_dir=str(target_dir),
+                    force_download=force,
+                )
+                rel_path = cand
+                break
+            except (EntryNotFoundError, FileNotFoundError):
+                continue
+
+        if not downloaded_path:
+            raise FileNotFoundError(
+                f"Could not find package '{filename}' on Hugging Face repository {repo_id} (searched candidates: {candidates})"
             )
         downloaded_file = Path(downloaded_path)
 
@@ -213,7 +262,12 @@ def download_package_from_hf(
 
             actual_sha = compute_sha256(downloaded_file)
             remote_sha = _fetch_remote_hf_sha256(
-                repo_id, rel_path, filename, revision=resolved_revision, timeout=timeout
+                repo_id,
+                [rel_path] + [c for c in candidates if c != rel_path],
+                filename=filename,
+                revision=resolved_revision,
+                timeout=timeout,
+                tier=tier,
             )
             if remote_sha:
                 if actual_sha.lower() != remote_sha.lower():
@@ -228,39 +282,38 @@ def download_package_from_hf(
                 )
     except ImportError:
         # Fallback to direct HTTP download via requests with atomic .part staging
-        url = f"https://huggingface.co/datasets/{repo_id}/resolve/{resolved_revision}/{rel_path}"
-        console.print(
-            f"[bold cyan]Downloading {filename} (revision: {resolved_revision}) via public direct stream from {url}...[/bold cyan]"
-        )
+        response = None
+        for cand in candidates:
+            url = f"https://huggingface.co/datasets/{repo_id}/resolve/{resolved_revision}/{cand}"
+            try:
+                resp = requests.get(url, stream=True, timeout=timeout)
+                if resp.status_code == 200:
+                    response = resp
+                    rel_path = cand
+                    break
+            except Exception:
+                continue
 
-        response = requests.get(url, stream=True, timeout=timeout)
-        if response.status_code != 200:
-            # Try root URL fallback
-            fallback_url = (
-                f"https://huggingface.co/datasets/{repo_id}/resolve/{resolved_revision}/{filename}"
+        if response is None and resolved_revision != "main":
+            console.print(
+                f"[yellow]Revision '{resolved_revision}' not found for {filename}. Retrying with 'main'...[/yellow]"
             )
-            response = requests.get(fallback_url, stream=True, timeout=timeout)
-            if response.status_code != 200:
-                if resolved_revision != "main":
-                    console.print(
-                        f"[yellow]Revision '{resolved_revision}' not found for {filename}. Retrying with 'main'...[/yellow]"
-                    )
-                    url_main = f"https://huggingface.co/datasets/{repo_id}/resolve/main/{rel_path}"
-                    response = requests.get(url_main, stream=True, timeout=timeout)
-                    if response.status_code != 200:
-                        fallback_main = (
-                            f"https://huggingface.co/datasets/{repo_id}/resolve/main/{filename}"
-                        )
-                        response = requests.get(fallback_main, stream=True, timeout=timeout)
-                        if response.status_code != 200:
-                            raise RuntimeError(
-                                f"Failed to download package '{filename}' from Hugging Face Hub at {url} (HTTP {response.status_code})."
-                            )
-                    resolved_revision = "main"
-                else:
-                    raise RuntimeError(
-                        f"Failed to download package '{filename}' from Hugging Face Hub at {url} (HTTP {response.status_code})."
-                    )
+            for cand in candidates:
+                url_main = f"https://huggingface.co/datasets/{repo_id}/resolve/main/{cand}"
+                try:
+                    resp = requests.get(url_main, stream=True, timeout=timeout)
+                    if resp.status_code == 200:
+                        response = resp
+                        rel_path = cand
+                        resolved_revision = "main"
+                        break
+                except Exception:
+                    continue
+
+        if response is None:
+            raise RuntimeError(
+                f"Failed to download package '{filename}' from Hugging Face Hub at {repo_id} (tried candidates: {candidates})."
+            )
 
         part_file = dest_file.with_suffix(".duckdb.part")
         if part_file.exists():
@@ -276,7 +329,12 @@ def download_package_from_hf(
 
             actual_sha = compute_sha256(part_file)
             remote_sha = _fetch_remote_hf_sha256(
-                repo_id, rel_path, filename, revision=resolved_revision, timeout=timeout
+                repo_id,
+                [rel_path] + [c for c in candidates if c != rel_path],
+                filename=filename,
+                revision=resolved_revision,
+                timeout=timeout,
+                tier=tier,
             )
             if remote_sha:
                 if actual_sha.lower() != remote_sha.lower():
@@ -312,10 +370,11 @@ def upload_package_to_hf(
     tag: Optional[str] = None,
     force: bool = False,
     commit_message: Optional[str] = None,
+    tier: Optional[str] = "bronze",
 ) -> None:
     """Uploads compiled .duckdb package(s) and Parquet shards to Hugging Face Hub in a single atomic Git commit.
 
-    Organizes releases cleanly into year subfolders (e.g. 2004/faers_2004Q1.duckdb, merged/...).
+    Organizes releases cleanly into tier and year subfolders (e.g. bronze/2004/faers_2004Q1.duckdb).
     Supports a single period name or a batch list of periods for bulk 1-commit upload.
 
     Args:
@@ -328,6 +387,7 @@ def upload_package_to_hf(
         tag: Optional Git tag to attach to Hugging Face repository upon upload.
         force: Whether to force overwrite existing tags on Hugging Face.
         commit_message: Optional custom commit message.
+        tier: Data lake tier (e.g. 'bronze', 'silver', 'gold'). Defaults to 'bronze'.
 
     Returns:
         None
@@ -362,6 +422,7 @@ def upload_package_to_hf(
 
     operations: List[CommitOperationAdd] = []
     total_bytes = 0
+    tier_prefix = f"{tier}/" if tier else ""
 
     for rel in periods:
         rel_clean = rel.strip()
@@ -380,7 +441,11 @@ def upload_package_to_hf(
         parquet_dir = pkg_dir / parquet_dir_name
 
         if duckdb_file.exists():
-            path_in_repo = f"{subfolder}/{duckdb_name}" if subfolder else duckdb_name
+            path_in_repo = (
+                f"{tier_prefix}{subfolder}/{duckdb_name}"
+                if subfolder
+                else f"{tier_prefix}{duckdb_name}"
+            )
             operations.append(
                 CommitOperationAdd(
                     path_in_repo=path_in_repo,
@@ -389,12 +454,23 @@ def upload_package_to_hf(
             )
             total_bytes += duckdb_file.stat().st_size
 
+            # Companion sha256 file if present
+            sha_file = duckdb_file.with_suffix(".duckdb.sha256")
+            if sha_file.exists():
+                operations.append(
+                    CommitOperationAdd(
+                        path_in_repo=f"{path_in_repo}.sha256",
+                        path_or_fileobj=sha_file.as_posix(),
+                    )
+                )
+                total_bytes += sha_file.stat().st_size
+
         if include_parquet and parquet_dir.exists():
             for p_file in sorted(parquet_dir.glob("*.parquet")):
                 rel_p = (
-                    f"{subfolder}/{parquet_dir_name}/{p_file.name}"
+                    f"{tier_prefix}{subfolder}/{parquet_dir_name}/{p_file.name}"
                     if subfolder
-                    else f"{parquet_dir_name}/{p_file.name}"
+                    else f"{tier_prefix}{parquet_dir_name}/{p_file.name}"
                 )
                 operations.append(
                     CommitOperationAdd(

@@ -1,7 +1,7 @@
 """Data sources framework, protocols, base adapters, and generic connectors for raxtik-etl."""
 
 from raxtik_etl.sources.base import BaseSourceAdapter
-from raxtik_etl.sources.discovery import find_files_by_entity
+from raxtik_etl.sources.discovery import find_cached_archive, find_files_by_entity
 from raxtik_etl.sources.network import download_file, stream_download
 from raxtik_etl.sources.parser import clean_field_name, detect_file_entity, parse_delimited_file
 from raxtik_etl.sources.protocol import SourceAdapter, SourceArtifact, SourceLoadResult
@@ -42,6 +42,7 @@ __all__ = [
     "validate_and_normalize_data_periods",
     "download_file",
     "stream_download",
+    "find_cached_archive",
     "find_files_by_entity",
     "clean_field_name",
     "detect_file_entity",

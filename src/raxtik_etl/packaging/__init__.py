@@ -4,6 +4,7 @@ from raxtik_etl.packaging.builder import (
     PACKAGE_FORMAT_VERSION,
     PackageFormat,
     build_quarterly_package,
+    cleanup_staging_artifacts,
     compute_sha256,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "PACKAGE_FORMAT_VERSION",
     "PackageFormat",
     "build_quarterly_package",
+    "cleanup_staging_artifacts",
     "compute_sha256",
 ]

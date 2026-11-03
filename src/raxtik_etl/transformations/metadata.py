@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import duckdb
 
@@ -187,21 +187,24 @@ def populate_package_metadata(
             source_name VARCHAR
         );
     """)
-    con.execute(f"""
-        INSERT INTO _schema_migrations VALUES (
-            'M001_INITIAL_CANONICAL',
-            '{CANONICAL_SCHEMA_VERSION}',
-            '{datetime.now(timezone.utc).isoformat()}',
-            'Initial canonical 7-table schema with dual presentation (reports/cases)',
-            '{actual_source_name}'
-        );
-    """)
+    con.execute(
+        """
+        INSERT INTO _schema_migrations VALUES (?, ?, ?, ?, ?);
+        """,
+        [
+            "M001_INITIAL_CANONICAL",
+            CANONICAL_SCHEMA_VERSION,
+            datetime.now(timezone.utc).isoformat(),
+            "Initial canonical 7-table schema with dual presentation (reports/cases)",
+            actual_source_name,
+        ],
+    )
 
     # 4. Reference Tables (_code_*) & Raxtik Semantics
     _populate_reference_dimensions(con, reference_tables=reference_tables)
 
-    def _scalar(sql: str, default: Any = 0) -> Any:
-        row = con.execute(sql).fetchone()
+    def _scalar(sql: str, params: Optional[Sequence[Any]] = None, default: Any = 0) -> Any:
+        row = con.execute(sql, params).fetchone() if params else con.execute(sql).fetchone()
         return row[0] if row is not None else default
 
     # 5. _data_quality_report (Automated EDA Profiling)
@@ -258,7 +261,7 @@ def populate_package_metadata(
     # Dynamic clinical outcome distributions based on canonical mapping
     outcome_counts: dict[str, int] = {}
     for code, label in OUTCOME_LABEL_MAPPING.items():
-        cnt = _scalar(f"SELECT COUNT(*) FROM outc WHERE outcome_code = '{code}';")
+        cnt = _scalar("SELECT COUNT(*) FROM outc WHERE outcome_code = ?;", [code])
         outcome_counts[code] = cnt
         code_slug = label.lower().split(" - ")[0].split(" / ")[0].replace(" ", "_")
         quality_metrics.append(
@@ -285,11 +288,11 @@ def populate_package_metadata(
         if not existing_cols:
             continue
 
-        tbl_rows = _scalar(f"SELECT COUNT(*) FROM {tbl};")
+        tbl_rows = _scalar(f"SELECT COUNT(*) FROM {tbl};")  # nosec B608
         quality_metrics.append((f"total_{tbl}_rows", str(tbl_rows), "COUNTS", now_ts))
 
         if "primary_id" in existing_cols:
-            distinct_pids = _scalar(f"SELECT COUNT(DISTINCT primary_id) FROM {tbl};")
+            distinct_pids = _scalar(f"SELECT COUNT(DISTINCT primary_id) FROM {tbl};")  # nosec B608
             quality_metrics.append(
                 (f"distinct_primary_id_{tbl}", str(distinct_pids), "KEYS", now_ts)
             )
@@ -297,7 +300,7 @@ def populate_package_metadata(
             # Referential integrity check: every child row's primary_id must exist in demo.primary_id
             if tbl != "demo":
                 orphaned = _scalar(
-                    f"SELECT COUNT(*) FROM {tbl} WHERE primary_id NOT IN (SELECT primary_id FROM demo);"
+                    f"SELECT COUNT(*) FROM {tbl} WHERE primary_id NOT IN (SELECT primary_id FROM demo);"  # nosec B608
                 )
                 quality_metrics.append(
                     (f"orphaned_rows_{tbl}", str(orphaned), "VALIDATIONS", now_ts)
@@ -314,7 +317,7 @@ def populate_package_metadata(
         pk_cols = model.get_primary_keys()
         if all(c in existing_cols for c in pk_cols):
             pk_expr = ", ".join(pk_cols)
-            distinct_pks = _scalar(f"SELECT COUNT(*) FROM (SELECT DISTINCT {pk_expr} FROM {tbl});")
+            distinct_pks = _scalar(f"SELECT COUNT(*) FROM (SELECT DISTINCT {pk_expr} FROM {tbl});")  # nosec B608
             dup_pks = tbl_rows - distinct_pks
             if len(pk_cols) > 1:
                 quality_metrics.append(
@@ -360,15 +363,18 @@ def populate_package_metadata(
             row_count BIGINT
         );
     """)
-    con.execute(f"""
-        INSERT INTO _source_files VALUES (
-            '{source_zip_path.name}',
-            {source_zip_path.stat().st_size},
-            '{zip_sha256}',
-            'RAW_ARCHIVE_ZIP',
-            {total_reports}
-        );
-    """)
+    con.execute(
+        """
+        INSERT INTO _source_files VALUES (?, ?, ?, ?, ?);
+        """,
+        [
+            source_zip_path.name,
+            source_zip_path.stat().st_size,
+            zip_sha256,
+            "RAW_ARCHIVE_ZIP",
+            total_reports,
+        ],
+    )
 
 
 def _populate_reference_dimensions(
@@ -413,7 +419,7 @@ def _populate_reference_dimensions(
             );
         """)
         con.executemany(
-            f"INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            f"INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",  # nosec B608
             [
                 (
                     getattr(e, "code", getattr(e, "outcome_code", getattr(e, "role_code", ""))),

@@ -25,7 +25,7 @@ def parse_quarter(period_or_filename: Union[str, Path]) -> Tuple[int, int]:
     Raises:
         ValueError: If input does not match expected quarterly format (YYYYqQ).
     """
-    match = re.search(r"(\d{4})[qQ]([1-4])", str(period_or_filename))
+    match = re.search(r"(\d{4})[-_]?[qQ]([1-4])", str(period_or_filename))
     if not match:
         raise ValueError(
             f"Invalid quarterly format: '{period_or_filename}'. Expected format like '2004Q1'."

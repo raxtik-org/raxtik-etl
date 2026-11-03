@@ -25,6 +25,7 @@ from raxtik_etl.schema.registry import (
 )
 from raxtik_etl.sources.protocol import SourceAdapter, SourceArtifact
 from raxtik_etl.sources.registry import get_source_adapter
+from raxtik_etl.sources.temporal import normalize_quarter
 from raxtik_etl.transformations.metadata import populate_package_metadata
 
 console = Console()
@@ -58,25 +59,43 @@ def compute_sha256(filepath: Path | str) -> str:
     return h.hexdigest()
 
 
-def validate_package_format(format_name: str | PackageFormat) -> str:
-    """Validates and normalizes package format argument ('both', 'duckdb', 'parquet').
+def validate_package_format(format_name: str | PackageFormat) -> PackageFormat:
+    """Validates and converts package format argument to PackageFormat enum.
 
     Args:
         format_name: Target package format ('both', 'duckdb', or 'parquet').
 
     Returns:
-        Normalized lowercase format string.
+        PackageFormat enum instance.
 
     Raises:
         ValueError: If format_name is not one of the supported formats.
     """
+    if isinstance(format_name, PackageFormat):
+        return format_name
     try:
-        return PackageFormat(str(format_name).lower().strip()).value
+        return PackageFormat(str(format_name).lower().strip())
     except ValueError:
         valid_opts = [f.value for f in PackageFormat]
         raise ValueError(
             f"Invalid format '{format_name}'. Supported options are {valid_opts}."
         ) from None
+
+
+def cleanup_staging_artifacts(
+    tmp_duckdb: Optional[Path] = None,
+    tmp_parquet: Optional[Path] = None,
+) -> None:
+    """Safely removes temporary staging DuckDB files (.tmp_*.duckdb) and Parquet directories (.tmp_*.parquet).
+
+    Args:
+        tmp_duckdb: Optional path to temporary DuckDB staging file.
+        tmp_parquet: Optional path to temporary Parquet staging directory.
+    """
+    if tmp_duckdb and tmp_duckdb.exists():
+        tmp_duckdb.unlink(missing_ok=True)
+    if tmp_parquet and tmp_parquet.exists():
+        shutil.rmtree(tmp_parquet, ignore_errors=True)
 
 
 def resolve_package_paths(
@@ -104,9 +123,7 @@ def resolve_package_paths(
     tmp_duckdb = out_dir / f".tmp_{duckdb_path.name}"
     tmp_parquet = out_dir / f".tmp_{parquet_dir.name}"
 
-    tmp_duckdb.unlink(missing_ok=True)
-    if tmp_parquet.exists():
-        shutil.rmtree(tmp_parquet, ignore_errors=True)
+    cleanup_staging_artifacts(tmp_duckdb=tmp_duckdb, tmp_parquet=tmp_parquet)
 
     return duckdb_path, parquet_dir, tmp_duckdb, tmp_parquet
 
@@ -232,7 +249,7 @@ def promote_staging_artifacts(
     duckdb_path: Path,
     tmp_parquet: Path,
     parquet_dir: Path,
-    format_clean: str,
+    format_clean: PackageFormat,
 ) -> None:
     """Atomically promotes staging artifacts (.tmp_*) to final destination paths.
 
@@ -241,22 +258,21 @@ def promote_staging_artifacts(
         duckdb_path: Final destination path for DuckDB file.
         tmp_parquet: Temporary staging path for Parquet directory.
         parquet_dir: Final destination path for Parquet directory.
-        format_clean: Target format ('both', 'duckdb', or 'parquet').
-
-    Returns:
-        None
+        format_clean: Target format PackageFormat enum instance.
     """
-    if format_clean in ("both", "duckdb"):
-        tmp_duckdb.replace(duckdb_path)
-    elif tmp_duckdb.exists():
-        tmp_duckdb.unlink()
+    if format_clean in (PackageFormat.BOTH, PackageFormat.DUCKDB):
+        if tmp_duckdb.exists():
+            tmp_duckdb.replace(duckdb_path)
+    else:
+        cleanup_staging_artifacts(tmp_duckdb=tmp_duckdb)
 
-    if format_clean in ("both", "parquet"):
-        if parquet_dir.exists():
-            shutil.rmtree(parquet_dir, ignore_errors=True)
-        tmp_parquet.replace(parquet_dir)
-    elif tmp_parquet.exists():
-        shutil.rmtree(tmp_parquet, ignore_errors=True)
+    if format_clean in (PackageFormat.BOTH, PackageFormat.PARQUET):
+        if tmp_parquet.exists():
+            if parquet_dir.exists():
+                shutil.rmtree(parquet_dir, ignore_errors=True)
+            tmp_parquet.replace(parquet_dir)
+    else:
+        cleanup_staging_artifacts(tmp_parquet=tmp_parquet)
 
 
 def cleanup_source_archive(zip_path: Optional[Path]) -> None:
@@ -264,9 +280,6 @@ def cleanup_source_archive(zip_path: Optional[Path]) -> None:
 
     Args:
         zip_path: Filesystem path to the source archive file or directory to delete.
-
-    Returns:
-        None
     """
     if zip_path and zip_path.exists():
         if zip_path.is_file():
@@ -276,13 +289,87 @@ def cleanup_source_archive(zip_path: Optional[Path]) -> None:
         console.print(f"[dim]✓ Deleted raw source ASCII archive:[/dim] {zip_path.name}")
 
 
+def _compile_staging_package(
+    tmp_duckdb: Path,
+    tmp_parquet: Path,
+    adapter: SourceAdapter,
+    source_name: str,
+    zip_path: Path,
+    data_period: str,
+    format: PackageFormat,
+) -> tuple[Any, dict[str, Any]]:
+    """Compiles the DuckDB staging database and optionally exports Parquet shards."""
+    con = duckdb.connect(tmp_duckdb.as_posix())
+    try:
+        load_result = execute_package_pipeline(
+            con=con,
+            adapter=adapter,
+            source_name=source_name,
+            zip_path=zip_path,
+            data_period=data_period,
+        )
+
+        if format in (PackageFormat.BOTH, PackageFormat.PARQUET):
+            export_canonical_tables_to_parquet(
+                con=con,
+                target_tables=CANONICAL_TABLES,
+                destination_dir=tmp_parquet,
+            )
+
+        metrics = con.execute(
+            "SELECT metric_name, metric_value FROM _data_quality_report"
+        ).fetchall()
+        return load_result, dict(metrics)
+    except Exception:
+        cleanup_staging_artifacts(tmp_duckdb=tmp_duckdb, tmp_parquet=tmp_parquet)
+        raise
+    finally:
+        con.close()
+
+
+def _format_package_result(
+    data_period: str,
+    signature_id: str,
+    metrics: dict[str, Any],
+    format: PackageFormat,
+    duckdb_path: Path,
+    parquet_dir: Path,
+) -> dict[str, Any]:
+    """Formats output summary metadata and prints progress console banners."""
+    result: dict[str, Any] = {
+        "data_period": data_period,
+        "signature_id": signature_id,
+        "metrics": metrics,
+        "format": format.value,
+    }
+
+    if format == PackageFormat.PARQUET:
+        if duckdb_path.exists():
+            duckdb_path.unlink()
+        result["parquet_dir"] = parquet_dir.as_posix()
+        console.print(
+            f"[bold green]✓ Successfully built Parquet package for {data_period}[/bold green]"
+        )
+    else:
+        sha256_val = compute_sha256(duckdb_path)
+        result["duckdb_path"] = duckdb_path.as_posix()
+        result["sha256"] = sha256_val
+        if format == PackageFormat.BOTH:
+            result["parquet_dir"] = parquet_dir.as_posix()
+        console.print(
+            f"[bold green]✓ Successfully built package:[/bold green] {duckdb_path.name} "
+            f"({duckdb_path.stat().st_size / (1024 * 1024):.2f} MB, SHA-256: [bold]{sha256_val[:12]}[/bold])"
+        )
+    return result
+
+
 def build_quarterly_package(
     data_period: str,
     zip_path: Path,
     source_name: str = "faers",
     adapter: Optional[SourceAdapter] = None,
     output_dir: Optional[Path] = None,
-    format: str = "both",
+    format: PackageFormat | str = PackageFormat.BOTH,
     delete_ascii: bool = True,
 ) -> Dict[str, Any]:
     """Builds a standalone .duckdb and/or .parquet package for a specific quarterly release.
@@ -296,17 +383,21 @@ def build_quarterly_package(
         source_name: Name of source connector (defaults to 'faers').
         adapter: Optional custom SourceAdapter instance.
         output_dir: Destination package directory (defaults to ~/.cache/raxtik/packages).
-        format: Package format to generate: 'both', 'duckdb', or 'parquet' (defaults to 'both').
+        format: Package format to generate: 'both', 'duckdb', or 'parquet' (defaults to PackageFormat.BOTH).
         delete_ascii: Whether to delete raw source archive/ASCII files after compilation (defaults to True).
 
     Returns:
         Dict with generated paths, signature, and metadata metrics.
     """
-    period_clean = data_period.upper().strip()
+    try:
+        period_clean = normalize_quarter(data_period)
+    except ValueError:
+        period_clean = data_period.upper().strip()
+
     if not period_clean:
         raise ValueError("data_period (e.g. '2004Q1') must be provided.")
 
-    format_clean = validate_package_format(format)
+    format_enum = validate_package_format(format)
     duckdb_path, parquet_dir, tmp_duckdb, tmp_parquet = resolve_package_paths(
         data_period=period_clean,
         source_name=source_name,
@@ -314,75 +405,36 @@ def build_quarterly_package(
     )
 
     console.print(
-        f"[bold cyan]Building Safety Package [{source_name.upper()}] for {period_clean} (format: {format_clean})...[/bold cyan]"
+        f"[bold cyan]Building Safety Package [{source_name.upper()}] for {period_clean} (format: {format_enum.value})...[/bold cyan]"
     )
-    con = duckdb.connect(tmp_duckdb.as_posix())
 
-    try:
-        active_adapter = adapter or get_source_adapter(source_name)
-        load_result = execute_package_pipeline(
-            con=con,
-            adapter=active_adapter,
-            source_name=source_name,
-            zip_path=zip_path,
-            data_period=period_clean,
-        )
-
-        if format_clean in ("both", "parquet"):
-            export_canonical_tables_to_parquet(
-                con=con,
-                target_tables=CANONICAL_TABLES,
-                destination_dir=tmp_parquet,
-            )
-
-        metrics = con.execute(
-            "SELECT metric_name, metric_value FROM _data_quality_report"
-        ).fetchall()
-        metrics_dict = dict(metrics)
-
-    except Exception:
-        if tmp_duckdb.exists():
-            tmp_duckdb.unlink()
-        if tmp_parquet.exists():
-            shutil.rmtree(tmp_parquet, ignore_errors=True)
-        raise
-    finally:
-        con.close()
+    active_adapter = adapter or get_source_adapter(source_name)
+    load_result, metrics_dict = _compile_staging_package(
+        tmp_duckdb=tmp_duckdb,
+        tmp_parquet=tmp_parquet,
+        adapter=active_adapter,
+        source_name=source_name,
+        zip_path=zip_path,
+        data_period=period_clean,
+        format=format_enum,
+    )
 
     promote_staging_artifacts(
         tmp_duckdb=tmp_duckdb,
         duckdb_path=duckdb_path,
         tmp_parquet=tmp_parquet,
         parquet_dir=parquet_dir,
-        format_clean=format_clean,
+        format_clean=format_enum,
     )
 
     if delete_ascii:
         cleanup_source_archive(zip_path)
 
-    result: Dict[str, Any] = {
-        "data_period": period_clean,
-        "signature_id": load_result.signature_id,
-        "metrics": metrics_dict,
-        "format": format_clean,
-    }
-
-    if format_clean == "parquet":
-        if duckdb_path.exists():
-            duckdb_path.unlink()
-        result["parquet_dir"] = parquet_dir.as_posix()
-        console.print(
-            f"[bold green]✓ Successfully built Parquet package for {period_clean}[/bold green]"
-        )
-    else:
-        sha256_val = compute_sha256(duckdb_path)
-        result["duckdb_path"] = duckdb_path.as_posix()
-        result["sha256"] = sha256_val
-        if format_clean == "both":
-            result["parquet_dir"] = parquet_dir.as_posix()
-        console.print(
-            f"[bold green]✓ Successfully built package:[/bold green] {duckdb_path.name} "
-            f"({duckdb_path.stat().st_size / (1024 * 1024):.2f} MB, SHA-256: [bold]{sha256_val[:12]}[/bold])"
-        )
-
-    return result
+    return _format_package_result(
+        data_period=period_clean,
+        signature_id=load_result.signature_id,
+        metrics=metrics_dict,
+        format=format_enum,
+        duckdb_path=duckdb_path,
+        parquet_dir=parquet_dir,
+    )
