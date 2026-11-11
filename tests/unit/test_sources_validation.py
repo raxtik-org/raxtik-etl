@@ -122,6 +122,11 @@ def test_base_source_adapter_validate_extract_file(tmp_path: Path):
         ("aers_ascii_2004q1.zip", 0, "2004Q1", False),
         # Non-zip files ignored
         ("aers_ascii_2004q1.txt", 100, "2004Q1", False),
+        # Incomplete / temp files ignored
+        (".tmp_faers_ascii_2013q1.zip", 100, "2013Q1", False),
+        ("~faers_ascii_2013q1.zip", 100, "2013Q1", False),
+        # Corrupted non-zip data with .zip extension ignored
+        ("corrupted_2013q1.zip", -1, "2013Q1", False),
     ],
 )
 def test_find_cached_archive(
@@ -131,7 +136,15 @@ def test_find_cached_archive(
     cache_dir.mkdir(parents=True, exist_ok=True)
     f = cache_dir / filename
     if file_size > 0:
-        f.write_bytes(b"x" * file_size)
+        if filename.lower().endswith(".zip") and not filename.startswith((".", "~")):
+            import zipfile
+
+            with zipfile.ZipFile(f, "w") as zf:
+                zf.writestr("dummy.txt", b"x" * file_size)
+        else:
+            f.write_bytes(b"x" * file_size)
+    elif file_size == -1:
+        f.write_bytes(b"not a valid zip file content")
     else:
         f.touch()
 

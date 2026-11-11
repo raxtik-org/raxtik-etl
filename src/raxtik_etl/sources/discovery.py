@@ -7,6 +7,7 @@ based on prefix mappings or pattern matchers.
 from __future__ import annotations
 
 import fnmatch
+import zipfile
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Union
 
@@ -87,7 +88,13 @@ def find_cached_archive(
 
     for s_dir in search_dirs:
         for f in s_dir.iterdir():
-            if not f.is_file() or not f.name.lower().endswith(".zip") or f.stat().st_size == 0:
+            if (
+                not f.is_file()
+                or f.name.startswith((".", "~"))
+                or not f.name.lower().endswith(".zip")
+                or f.stat().st_size == 0
+                or not zipfile.is_zipfile(f)
+            ):
                 continue
             try:
                 if normalize_quarter(f.name) == target_period:
