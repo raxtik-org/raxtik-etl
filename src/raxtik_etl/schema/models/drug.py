@@ -78,7 +78,14 @@ class CanonicalDrug(BaseCanonicalModel):
         "VARCHAR",
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
-        description="Validation flag (1=validated, 2=non-validated)",
+        description="Validation flag (1=validated trade name, 2=verbatim name)",
+    )
+    reported_validation_label: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Human-readable drug name validation status label",
     )
     route: Optional[str] = Column(
         "VARCHAR",
@@ -116,6 +123,13 @@ class CanonicalDrug(BaseCanonicalModel):
         category=TransformationCategory.F_SEMANTIC_SPLIT,
         description="Dosing frequency (QD, BID, etc.)",
     )
+    dose_frequency_label: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Human-readable dosing frequency label",
+    )
     cumulative_dose_amount: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
@@ -127,6 +141,13 @@ class CanonicalDrug(BaseCanonicalModel):
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
         description="Cumulative dose unit",
+    )
+    cumulative_dose_unit_label: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Human-readable cumulative dose unit label",
     )
     dechallenge_code: Optional[str] = Column(
         "VARCHAR",

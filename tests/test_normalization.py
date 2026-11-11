@@ -4,9 +4,15 @@ import duckdb
 import pytest
 
 from raxtik_etl.transformations.normalization import (
+    get_age_group_label_sql,
+    get_age_unit_label_sql,
+    get_cumulative_dose_unit_label_sql,
     get_date_precision_sql,
     get_dechallenge_label_sql,
+    get_dose_frequency_label_sql,
+    get_drug_name_source_label_sql,
     get_drug_role_label_sql,
+    get_duration_unit_label_sql,
     get_initial_or_followup_label_sql,
     get_outcome_is_serious_sql,
     get_outcome_label_sql,
@@ -19,6 +25,7 @@ from raxtik_etl.transformations.normalization import (
     get_standard_duration_days_sql,
     get_standard_sex_label_sql,
     get_standard_weight_sql,
+    get_weight_unit_label_sql,
 )
 
 
@@ -235,4 +242,61 @@ def test_human_readable_label_normalizations():
         "Death",
         True,
         "Health Professional",
+    )
+
+
+def test_extended_fda_codelist_normalizations():
+    """Verify age groups, drug name sources, dose frequencies, cumulative units, duration units, and combination product reports."""
+    con = duckdb.connect()
+    age_grp_sql = get_age_group_label_sql("age_grp")
+    val_vbm_sql = get_drug_name_source_label_sql("val_vbm")
+    dose_freq_sql = get_dose_frequency_label_sql("dose_freq")
+    cum_unit_sql = get_cumulative_dose_unit_label_sql("cum_unit")
+    cum_unit_num_sql = get_cumulative_dose_unit_label_sql("cum_unit_num")
+    dur_unit_sql = get_duration_unit_label_sql("dur_unit")
+    rept_5day_sql = get_report_type_label_sql("rept_5day")
+    rept_30day_sql = get_report_type_label_sql("rept_30day")
+    age_unit_sql = get_age_unit_label_sql("age_unit")
+    wt_unit_sql = get_weight_unit_label_sql("wt_unit")
+
+    query = f"""
+        SELECT
+            {age_grp_sql} AS age_grp_lbl,
+            {val_vbm_sql} AS val_vbm_lbl,
+            {dose_freq_sql} AS dose_freq_lbl,
+            {cum_unit_sql} AS cum_unit_lbl,
+            {cum_unit_num_sql} AS cum_unit_num_lbl,
+            {dur_unit_sql} AS dur_unit_lbl,
+            {rept_5day_sql} AS rept_5day_lbl,
+            {rept_30day_sql} AS rept_30day_lbl,
+            {age_unit_sql} AS age_unit_lbl,
+            {wt_unit_sql} AS wt_unit_lbl
+        FROM (
+            SELECT
+                'A' AS age_grp,
+                '1' AS val_vbm,
+                'BID' AS dose_freq,
+                'MG' AS cum_unit,
+                '003' AS cum_unit_num,
+                'DAY' AS dur_unit,
+                '5DAY' AS rept_5day,
+                '30DAY' AS rept_30day,
+                'YR' AS age_unit,
+                'KG' AS wt_unit
+        )
+    """
+    res = con.execute(query).fetchone()
+    con.close()
+
+    assert res == (
+        "Adult",
+        "Validated Trade Name",
+        "Twice a day",
+        "Milligram(s)",
+        "Milligram(s)",
+        "Days",
+        "5-Day (Combination Product)",
+        "30-Day (Combination Product)",
+        "Years",
+        "Kilograms",
     )

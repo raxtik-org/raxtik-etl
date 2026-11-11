@@ -212,14 +212,8 @@ class CanonicalCase(BaseCanonicalModel):
     report_type_code: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
-        category=TransformationCategory.A_IDENTICAL,
-        description="Report type code (DIR, EXP, PER, etc.)",
-    )
-    report_code: Optional[str] = Column(
-        "VARCHAR",
-        nullable=True,
-        category=TransformationCategory.A_IDENTICAL,
-        description="Report type code verbatim (DIR, EXP, PER, etc.)",
+        category=TransformationCategory.B_RENAMED_ALIAS,
+        description="Report type code (renamed from raw FDA rept_cod: DIR, EXP, PER, 5DAY, 30DAY)",
     )
     report_type_label: Optional[str] = Column(
         "VARCHAR",
@@ -243,26 +237,14 @@ class CanonicalCase(BaseCanonicalModel):
     manufacturer_control_number: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
-        category=TransformationCategory.A_IDENTICAL,
-        description="Manufacturer internal control number",
-    )
-    manufacturer_num: Optional[str] = Column(
-        "VARCHAR",
-        nullable=True,
-        category=TransformationCategory.A_IDENTICAL,
-        description="Manufacturer internal control number",
+        category=TransformationCategory.B_RENAMED_ALIAS,
+        description="Manufacturer internal control number (renamed from raw FDA mfr_num)",
     )
     manufacturer_name: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
-        category=TransformationCategory.A_IDENTICAL,
-        description="Manufacturer name",
-    )
-    manufacturer_sender: Optional[str] = Column(
-        "VARCHAR",
-        nullable=True,
-        category=TransformationCategory.A_IDENTICAL,
-        description="Manufacturer sender company name",
+        category=TransformationCategory.B_RENAMED_ALIAS,
+        description="Manufacturer name (renamed from raw FDA mfr_sndr)",
     )
     auth_num: Optional[str] = Column(
         "VARCHAR",
@@ -309,17 +291,25 @@ class CanonicalCase(BaseCanonicalModel):
         category=TransformationCategory.A_IDENTICAL,
         description="Reported unit of age (YR, MON, WK, DY, HR, DEC)",
     )
+    reported_age_unit_label: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Human-readable patient age measurement unit label",
+    )
     age_group_code: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
-        category=TransformationCategory.A_IDENTICAL,
-        description="Patient age group code (NEO, INF, CHLD, ADOL, ADULT, ELD)",
+        category=TransformationCategory.C_ADDED_LATER,
+        description="Patient age group code (from raw FDA age_grp: N=Neonate, I=Infant, C=Child, T=Adolescent, A=Adult, E=Elderly)",
     )
-    reported_age_group_code: Optional[str] = Column(
+    age_group_label: Optional[str] = Column(
         "VARCHAR",
         nullable=True,
-        category=TransformationCategory.C_ADDED_LATER,
-        description="Reported age group code (alias of age_group_code)",
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Human-readable patient age group classification label",
     )
     reported_sex_code: Optional[str] = Column(
         "VARCHAR",
@@ -338,6 +328,13 @@ class CanonicalCase(BaseCanonicalModel):
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
         description="Unit of weight (KG, LBS, GMS)",
+    )
+    reported_weight_unit_label: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Human-readable patient weight measurement unit label",
     )
 
     # Patient Demographics - Standardized Derivations

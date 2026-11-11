@@ -34,6 +34,23 @@ WEIGHT_UNIT_FACTORS: Final[dict[str, float]] = {
     "GMS": 1.0 / 1000.0,
 }
 
+# Mapping from reported age unit codes to human-readable labels (AGE_COD)
+AGE_UNIT_LABEL_MAPPING: Final[dict[str, str]] = {
+    "YR": "Years",
+    "DEC": "Decades",
+    "MON": "Months",
+    "WK": "Weeks",
+    "DY": "Days",
+    "HR": "Hours",
+}
+
+# Mapping from reported weight unit codes to human-readable labels (WT_COD)
+WEIGHT_UNIT_LABEL_MAPPING: Final[dict[str, str]] = {
+    "KG": "Kilograms",
+    "LBS": "Pounds",
+    "GMS": "Grams",
+}
+
 # Mapping from reported raw sex/gender codes to canonical human-readable labels
 SEX_LABEL_MAPPING: Final[dict[str, str]] = {
     "M": "Male",
@@ -62,6 +79,134 @@ REPORT_TYPE_LABEL_MAPPING: Final[dict[str, str]] = {
     "EXP": "Expedited (15-Day)",
     "PER": "Periodic",
     "DIR": "Direct",
+    "5DAY": "5-Day (Combination Product)",
+    "30DAY": "30-Day (Combination Product)",
+}
+
+# Mapping from patient age group codes to human-readable labels (S3/S4 AGE_GRP)
+AGE_GROUP_LABEL_MAPPING: Final[dict[str, str]] = {
+    "N": "Neonate",
+    "I": "Infant",
+    "C": "Child",
+    "T": "Adolescent",
+    "A": "Adult",
+    "E": "Elderly",
+}
+
+# Mapping from drug name validation codes to human-readable labels (VAL_VBM)
+DRUG_NAME_SOURCE_LABEL_MAPPING: Final[dict[str, str]] = {
+    "1": "Validated Trade Name",
+    "2": "Verbatim Name",
+}
+
+# Mapping from dose frequency codes to human-readable labels (DOSE_FREQ)
+DOSE_FREQUENCY_LABEL_MAPPING: Final[dict[str, str]] = {
+    "1X": "Once or one time",
+    "BID": "Twice a day",
+    "BIW": "Twice a week",
+    "HS": "At bedtime",
+    "PRN": "As needed",
+    "Q12H": "Every 12 hours",
+    "Q2H": "Every 2 hours",
+    "Q3H": "Every 3 hours",
+    "Q3W": "Every 3 weeks",
+    "Q4H": "Every 4 hours",
+    "Q5H": "Every 5 hours",
+    "Q6H": "Every 6 hours",
+    "Q8H": "Every 8 hours",
+    "QD": "Daily",
+    "QH": "Every hour",
+    "QID": "4 times a day",
+    "QM": "Monthly",
+    "QOD": "Every other day",
+    "QOW": "Every other week",
+    "QW": "Every week",
+    "TID": "3 times a day",
+    "TIW": "3 times a week",
+    "UNK": "Unknown",
+}
+
+# Mapping from cumulative dose unit codes to human-readable labels (CUM_DOSE_UNIT)
+# Covers both FDA ASC_NTS text abbreviations and ICH M2 Appendix A.4 numeric codes (001-032).
+CUMULATIVE_DOSE_UNIT_LABEL_MAPPING: Final[dict[str, str]] = {
+    # FDA ASC_NTS Text Unit Abbreviations
+    "KG": "Kilogram(s)",
+    "GM": "Gram(s)",
+    "MG": "Milligram(s)",
+    "UG": "Microgram(s)",
+    "NG": "Nanogram(s)",
+    "PG": "Picogram(s)",
+    "MG/KG": "Milligram(s)/Kilogram",
+    "UG/KG": "Microgram(s)/Kilogram",
+    "MG/M**2": "Milligram(s)/Sq. Meter",
+    "UG/M**2": "Microgram(s)/Sq. Meter",
+    "L": "Litre(s)",
+    "ML": "Millilitre(s)",
+    "UL": "Microlitre(s)",
+    "BQ": "Becquerel(s)",
+    "GBQ": "Gigabecquerel(s)",
+    "MBQ": "Megabecquerel(s)",
+    "KBQ": "Kilobecquerel(s)",
+    "CI": "Curie(s)",
+    "MCI": "Millicurie(s)",
+    "UCI": "Microcurie(s)",
+    "NCI": "Nanocurie(s)",
+    "MOL": "Mole(s)",
+    "MMOL": "Millimole(s)",
+    "UMOL": "Micromole(s)",
+    "IU": "International Unit(s)",
+    "KIU": "International Unit*(1000s)",
+    "MIU": "International Unit*(1,000,000s)",
+    "IU/KG": "IU/Kilogram",
+    "MEQ": "Milliequivalent(s)",
+    "PCT": "Percent (%)",
+    "GTT": "Drop(s)",
+    "DF": "Dosage Form",
+    # ICH M2 Numeric Units (3-digit)
+    "001": "Kilogram(s)",
+    "002": "Gram(s)",
+    "003": "Milligram(s)",
+    "004": "Microgram(s)",
+    "005": "Nanogram(s)",
+    "006": "Picogram(s)",
+    "007": "Milligram(s)/Kilogram",
+    "008": "Microgram(s)/Kilogram",
+    "009": "Milligram(s)/Sq. Meter",
+    "010": "Microgram(s)/Sq. Meter",
+    "011": "Litre(s)",
+    "012": "Millilitre(s)",
+    "013": "Microlitre(s)",
+    "014": "Becquerel(s)",
+    "015": "Gigabecquerel(s)",
+    "016": "Megabecquerel(s)",
+    "017": "Kilobecquerel(s)",
+    "018": "Curie(s)",
+    "019": "Millicurie(s)",
+    "020": "Microcurie(s)",
+    "021": "Nanocurie(s)",
+    "022": "Mole(s)",
+    "023": "Millimole(s)",
+    "024": "Micromole(s)",
+    "025": "International Unit(s)",
+    "026": "International Unit*(1000s)",
+    "027": "International Unit*(1,000,000s)",
+    "028": "IU/Kilogram",
+    "029": "Milliequivalent(s)",
+    "030": "Percent (%)",
+    "031": "Drop(s)",
+    "032": "Dosage Form",
+}
+
+# Mapping from therapy duration unit codes to human-readable labels (DUR_COD)
+DURATION_UNIT_LABEL_MAPPING: Final[dict[str, str]] = {
+    "YR": "Years",
+    "MON": "Months",
+    "WK": "Weeks",
+    "DAY": "Days",
+    "DY": "Days",
+    "HR": "Hours",
+    "MIN": "Minutes",
+    "SEC": "Seconds",
 }
 
 # Mapping from drug role codes to human-readable labels
@@ -415,6 +560,104 @@ def get_report_source_label_sql(
     mapping: Mapping[str, str] = REPORT_SOURCE_LABEL_MAPPING,
 ) -> str:
     """Returns SQL expression for human-readable report source channel label."""
+    clean = f"UPPER(TRIM(CAST({code_col} AS VARCHAR)))"
+    branches = [f"WHEN {clean} = '{code}' THEN '{label}'" for code, label in mapping.items()]
+    branch_sql = "\n        ".join(branches)
+    return f"""CASE
+        {branch_sql}
+        ELSE NULL
+    END"""
+
+
+def get_age_group_label_sql(
+    code_col: str,
+    mapping: Mapping[str, str] = AGE_GROUP_LABEL_MAPPING,
+) -> str:
+    """Returns SQL expression for human-readable patient age group classification label."""
+    clean = f"UPPER(TRIM(CAST({code_col} AS VARCHAR)))"
+    branches = [f"WHEN {clean} = '{code}' THEN '{label}'" for code, label in mapping.items()]
+    branch_sql = "\n        ".join(branches)
+    return f"""CASE
+        {branch_sql}
+        ELSE NULL
+    END"""
+
+
+def get_drug_name_source_label_sql(
+    code_col: str,
+    mapping: Mapping[str, str] = DRUG_NAME_SOURCE_LABEL_MAPPING,
+) -> str:
+    """Returns SQL expression for human-readable drug name validation status label (VAL_VBM)."""
+    clean = f"TRIM(CAST({code_col} AS VARCHAR))"
+    branches = [f"WHEN {clean} = '{code}' THEN '{label}'" for code, label in mapping.items()]
+    branch_sql = "\n        ".join(branches)
+    return f"""CASE
+        {branch_sql}
+        ELSE NULL
+    END"""
+
+
+def get_dose_frequency_label_sql(
+    code_col: str,
+    mapping: Mapping[str, str] = DOSE_FREQUENCY_LABEL_MAPPING,
+) -> str:
+    """Returns SQL expression for human-readable dose frequency label (DOSE_FREQ)."""
+    clean = f"UPPER(TRIM(CAST({code_col} AS VARCHAR)))"
+    branches = [f"WHEN {clean} = '{code}' THEN '{label}'" for code, label in mapping.items()]
+    branch_sql = "\n        ".join(branches)
+    return f"""CASE
+        {branch_sql}
+        ELSE NULL
+    END"""
+
+
+def get_cumulative_dose_unit_label_sql(
+    code_col: str,
+    mapping: Mapping[str, str] = CUMULATIVE_DOSE_UNIT_LABEL_MAPPING,
+) -> str:
+    """Returns SQL expression for human-readable cumulative dose unit label (CUM_DOSE_UNIT)."""
+    clean = f"UPPER(TRIM(CAST({code_col} AS VARCHAR)))"
+    branches = [f"WHEN {clean} = '{code}' THEN '{label}'" for code, label in mapping.items()]
+    branch_sql = "\n        ".join(branches)
+    return f"""CASE
+        {branch_sql}
+        ELSE NULL
+    END"""
+
+
+def get_duration_unit_label_sql(
+    code_col: str,
+    mapping: Mapping[str, str] = DURATION_UNIT_LABEL_MAPPING,
+) -> str:
+    """Returns SQL expression for human-readable therapy duration unit label (DUR_COD)."""
+    clean = f"UPPER(TRIM(CAST({code_col} AS VARCHAR)))"
+    branches = [f"WHEN {clean} = '{code}' THEN '{label}'" for code, label in mapping.items()]
+    branch_sql = "\n        ".join(branches)
+    return f"""CASE
+        {branch_sql}
+        ELSE NULL
+    END"""
+
+
+def get_age_unit_label_sql(
+    code_col: str,
+    mapping: Mapping[str, str] = AGE_UNIT_LABEL_MAPPING,
+) -> str:
+    """Returns SQL expression for human-readable age unit label (AGE_COD)."""
+    clean = f"UPPER(TRIM(CAST({code_col} AS VARCHAR)))"
+    branches = [f"WHEN {clean} = '{code}' THEN '{label}'" for code, label in mapping.items()]
+    branch_sql = "\n        ".join(branches)
+    return f"""CASE
+        {branch_sql}
+        ELSE NULL
+    END"""
+
+
+def get_weight_unit_label_sql(
+    code_col: str,
+    mapping: Mapping[str, str] = WEIGHT_UNIT_LABEL_MAPPING,
+) -> str:
+    """Returns SQL expression for human-readable weight unit label (WT_COD)."""
     clean = f"UPPER(TRIM(CAST({code_col} AS VARCHAR)))"
     branches = [f"WHEN {clean} = '{code}' THEN '{label}'" for code, label in mapping.items()]
     branch_sql = "\n        ".join(branches)

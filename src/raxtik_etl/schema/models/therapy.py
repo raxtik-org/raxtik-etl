@@ -100,7 +100,14 @@ class CanonicalTherapy(BaseCanonicalModel):
         "VARCHAR",
         nullable=True,
         category=TransformationCategory.A_IDENTICAL,
-        description="Unit of duration (YR, MON, WK, DY, HR)",
+        description="Unit of duration (YR, MON, WK, DY, DAY, HR, MIN, SEC)",
+    )
+    reported_duration_label: Optional[str] = Column(
+        "VARCHAR",
+        nullable=True,
+        value_origin=ValueOrigin.DERIVED,
+        category=TransformationCategory.G_DERIVED_STANDARDIZED,
+        description="Human-readable therapy duration unit label",
     )
     standard_duration_days: Optional[float] = Column(
         "DOUBLE",
