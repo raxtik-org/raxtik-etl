@@ -103,46 +103,14 @@ When a user calls `Dataset(release="2004Q1", source="faers")`, the engine automa
 
 ## 4. The Canonical Data Model
 
-Every source connector projects raw records into a dimensional star-schema architecture consisting of **7 canonical fact tables**, an **authoritative deduplicated view (`cases`)**, and **16 pre-materialized reference dimension tables (`_code_*`)**:
+`raxtik-etl` models safety surveillance data using a unified, dimensional star-schema architecture designed for high-performance analytical scale:
 
-### Core Fact Tables
+- **7 Core Fact Tables**: Normalized clinical and submission entities (`demo`, `drug`, `reac`, `outc`, `indi`, `ther`, `rpsr`) preserving reported data alongside standardized units and dates.
+- **Authoritative Case View (`cases`)**: Evaluates `case_id` across multi-version submissions, selecting the latest authoritative version based on version numbers and report dates (`canonical_case_version`, `fda_date`) and pre-computing key safety flags (`has_serious_outcome`, `is_death`, `is_expedited`).
+- **16 Pre-Materialized Reference Dimensions (`_code_*`)**: Embedded codelist dimensions conforming to FDA CDER and ICH E2B(R2)/(R3) standards, allowing zero-dependency analytical joins in DuckDB and BI tools.
+- **Zero-Redundancy Canonical Taxonomy**: Enforces a single authoritative name per attribute, eliminating legacy raw CSV duplicate aliases in favor of formal provenance classifications (`TransformationCategory.B_RENAMED_ALIAS`) and standard human-readable labels (`*_label`).
 
-| Table | Entity | Primary Keys | Key Standardized Fields |
-| :--- | :--- | :--- | :--- |
-| **`demo`** | Case reports & demographics | `primary_id`, `case_id` | `standard_age_years`, `reported_age_unit_label`, `standard_sex_label`, `event_date`, `reporter_country_code`, `report_type_code`, `report_type_label` |
-| **`drug`** | Drug exposures & regimens | `primary_id`, `drug_seq` | `reported_drug_name`, `standard_role_label` (`PS`, `SS`, `C`, `I`), `route`, `dose_amt`, `dose_frequency_label`, `cumulative_dose_unit_label`, `reported_validation_label` |
-| **`reac`** | Adverse events / reactions | `primary_id`, `pt` | `pt` (MedDRA Preferred Term) |
-| **`outc`** | Patient clinical outcomes | `primary_id`, `outc_code` | `outc_code`, `standard_outc_label` (`DE`, `HO`, `LT`, `DS`, `CA`, `RI`, `OT`) |
-| **`indi`** | Therapy indications | `primary_id`, `indi_pt` | `indi_drug_seq`, `indi_pt` |
-| **`ther`** | Therapy durations | `primary_id`, `dsg_drug_seq` | `start_date`, `end_date`, `duration_days`, `reported_duration_label` |
-| **`rpsr`** | Report sources | `primary_id`, `rpsr_code` | `rpsr_code`, `standard_rpsr_label` |
-
-### Authoritative Case View (`cases`)
-A single adverse event case may receive multiple follow-up submissions across quarters. In addition to the immutable submission records in `demo`, each package includes a deterministic analytical view:
-- **`cases`**: Deduplicates by `case_id`, selecting the latest version based on version numbers and report dates (`canonical_case_version`, `fda_date`). It pre-computes flags like `has_serious_outcome` and `is_death`.
-
-### Reference Dimension Tables (`_code_*`)
-To provide zero-dependency analytical querying without requiring external join services, 16 official code dimensions are materialized directly into DuckDB and Parquet packages:
-- `_code_countries`: 240+ ISO 3166-1 alpha-2 countries.
-- `_code_report_types`: Expedited (15-day), Periodic, Direct, and combination product reporting rules (5-day, 30-day).
-- `_code_roles`: Primary Suspect, Secondary Suspect, Concomitant, Interacting.
-- `_code_outcomes` & `_code_outcome_semantics`: Patient seriousness criteria with clinical severity tier mappings.
-- `_code_sources`: Healthcare Professional, Study, Literature, Consumer, Foreign, User Facility.
-- `_code_occupations`: Physician, Pharmacist, Other Health Professional, Lawyer, Consumer.
-- `_code_sex`: Standard biological sex indicators.
-- `_code_age_units` & `_code_age_groups`: Normalization multipliers to years and ICH pediatric/adult life-stage categories.
-- `_code_weight_units`: Normalization multipliers to kilograms.
-- `_code_dechallenge`: Positive, negative, unknown, or not applicable responses.
-- `_code_drug_name_sources`: Validated trade names versus verbatim entries.
-- `_code_dose_frequencies`: Administration frequencies and daily dose factors.
-- `_code_cumulative_dose_units`: ICH ICSR E2B(R2)/(R3) unit definitions (001–032) and mass/volume units.
-- `_code_duration_units`: Therapy duration multipliers to days.
-
-### Canonical Taxonomy & Zero-Redundancy Principle
-The canonical schema strictly enforces a single authoritative name for every clinical and administrative concept:
-- Redundant raw CSV alias duplicates (such as legacy `report_code`, `manufacturer_num`, `manufacturer_sender`, `reported_age_group_code`) are eliminated in favor of clean canonical columns (`report_type_code`, `manufacturer_control_number`, `manufacturer_name`, `age_group_code`).
-- Provenance and transformation lineage are tracked in the package schema registry using `TransformationCategory.B_RENAMED_ALIAS` and `TransformationCategory.C_ADDED_LATER`.
-- Standard human-readable labels (`*_label`) are populated inline across all fact tables to streamline exploratory data analysis and reporting.
+👉 **Full Schema Reference**: See the **[Canonical Data Model Specification](schema/canonical_data_model.md)** and **[Coded Values Reference](schema/code_list_history.md)** for exhaustive column definitions, primary/foreign keys, and codelist mappings.
 
 ---
 
