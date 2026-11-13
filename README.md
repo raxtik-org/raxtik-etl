@@ -56,21 +56,26 @@ High-performance canonical pharmacovigilance (PV) data engine and packaging tool
 
 ## 🏛️ Canonical Data Model
 
-Every source connector projects raw records into 7 canonical fact tables:
+Every source connector projects raw records into a high-performance **star-schema architecture** consisting of 7 canonical fact tables, an authoritative deduplicated view (`cases`), and 16 pre-materialized reference dimension tables (`_code_*`):
+
+### Core Fact Tables
 
 | Table | Description | Primary / Entity Keys | Key Standardized Columns |
 | :--- | :--- | :--- | :--- |
-| `demo` | Case submissions & demographics | `primary_id`, `case_id` | `standard_age_years`, `standard_sex_label`, `event_date`, `reporter_occupation_label` |
-| `drug` | Reported drug exposures & regimens | `primary_id`, `drug_seq` | `drug_name`, `standard_role_label` (PS/SS/C/I), `route`, `dose_amt`, `dose_unit` |
+| `demo` | Case submissions & demographics | `primary_id`, `case_id` | `standard_age_years`, `reported_age_unit_label`, `standard_sex_label`, `event_date`, `report_type_label`, `reporter_occupation_label` |
+| `drug` | Reported drug exposures & regimens | `primary_id`, `drug_seq` | `drug_name`, `standard_role_label` (PS/SS/C/I), `route`, `dose_amt`, `dose_frequency_label`, `cumulative_dose_unit_label`, `reported_validation_label` |
 | `reac` | Adverse events / reaction terms | `primary_id`, `pt` | `pt` (MedDRA Preferred Term) |
 | `outc` | Seriousness outcome criteria | `primary_id`, `outc_code` | `outc_code`, `standard_outc_label` (DE, HO, LT, DS, CA, RI, OT) |
 | `indi` | Clinical indications for therapy | `primary_id`, `indi_pt` | `indi_drug_seq`, `indi_pt` |
-| `ther` | Therapy timelines & durations | `primary_id`, `dsg_drug_seq`| `start_date`, `end_date`, `duration_days` |
+| `ther` | Therapy timelines & durations | `primary_id`, `dsg_drug_seq`| `start_date`, `end_date`, `duration_days`, `reported_duration_label` |
 | `rpsr` | Adverse event report sources | `primary_id`, `rpsr_code` | `rpsr_code`, `standard_rpsr_label` |
 
 ### Authoritative Case View (`cases`)
 In addition to raw submissions, `raxtik-etl` compiles a deduplicated, authoritative view:
 - **`cases`**: Evaluates `CASE` / `CASEID` across multiple submission updates (`ISR` / `PRIMARYID`), selecting the latest authoritative report version (`FDA_DT`, `CASEVERSION`) and flagging expedited 15-day cases and serious adverse outcomes (`has_serious_outcome`, `is_death`).
+
+### Pre-Materialized Reference Dimensions (`_code_*`)
+Packaged DuckDB and Parquet datasets include 16 embedded reference dimensions (`_code_countries`, `_code_report_types`, `_code_roles`, `_code_outcomes`, `_code_outcome_semantics`, `_code_sources`, `_code_occupations`, `_code_sex`, `_code_age_units`, `_code_age_groups`, `_code_weight_units`, `_code_dechallenge`, `_code_drug_name_sources`, `_code_dose_frequencies`, `_code_cumulative_dose_units`, `_code_duration_units`) mapping ISO 3166-1 country codes, ICH E2B(R2/R3) guidelines, and FDA CDER clinical codelists.
 
 ---
 
