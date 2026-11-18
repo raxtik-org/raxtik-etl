@@ -18,7 +18,7 @@ import requests
 from tqdm import tqdm
 
 DEFAULT_HTTP_TIMEOUT: int = int(os.getenv("RAXTIK_HTTP_TIMEOUT", "120"))
-DEFAULT_PARALLEL_WORKERS: int = int(os.getenv("RAXTIK_DOWNLOAD_WORKERS", "6"))
+DEFAULT_PARALLEL_WORKERS: int = int(os.getenv("RAXTIK_DOWNLOAD_WORKERS", "8"))
 
 
 def _parallel_range_download(
@@ -34,7 +34,7 @@ def _parallel_range_download(
 ) -> None:
     """Downloads a file using concurrent HTTP Range requests across multiple worker threads."""
     tmp_path = target_path.with_name(f".tmp_{target_path.name}")
-    num_workers = max(1, min(num_workers, 12))
+    num_workers = max(1, min(num_workers, 16))
     chunk_len = (total_size + num_workers - 1) // num_workers
 
     ranges: list[tuple[int, int, int]] = []
@@ -46,7 +46,6 @@ def _parallel_range_download(
 
     bar_desc = desc or f"Downloading {target_path.name}"
     lock = threading.Lock()
-    active_session = session or requests.Session()
 
     with tqdm(
         desc=bar_desc,
@@ -71,46 +70,53 @@ def _parallel_range_download(
                     part_path.unlink(missing_ok=True)
                     downloaded_bytes = 0
 
+            # Dedicated thread session prevents server cookie-based connection throttling
+            worker_session = requests.Session()
+            worker_session.headers.update({"Accept-Encoding": "identity"})
+
             retries = 0
-            while retries <= max_retries:
-                try:
-                    curr_start = start + downloaded_bytes
-                    headers = {
-                        "Accept-Encoding": "identity",
-                        "Range": f"bytes={curr_start}-{end}",
-                    }
-                    read_timeout = (min(15, timeout), min(25, timeout))
-                    resp = active_session.get(
-                        url, headers=headers, stream=True, timeout=read_timeout
-                    )
-                    resp.raise_for_status()
+            try:
+                while retries <= max_retries:
+                    try:
+                        curr_start = start + downloaded_bytes
+                        headers = {
+                            "Accept-Encoding": "identity",
+                            "Range": f"bytes={curr_start}-{end}",
+                        }
+                        read_timeout = (min(15, timeout), min(25, timeout))
+                        resp = worker_session.get(
+                            url, headers=headers, stream=True, timeout=read_timeout
+                        )
+                        resp.raise_for_status()
 
-                    mode = "ab" if downloaded_bytes > 0 else "wb"
-                    with open(part_path, mode) as f:
-                        for chunk in resp.iter_content(chunk_size=128 * 1024):
-                            if chunk:
-                                f.write(chunk)
-                                chunk_size = len(chunk)
-                                downloaded_bytes += chunk_size
-                                with lock:
-                                    bar.update(chunk_size)
+                        mode = "ab" if downloaded_bytes > 0 else "wb"
+                        with open(part_path, mode) as f:
+                            for chunk in resp.iter_content(chunk_size=128 * 1024):
+                                if chunk:
+                                    f.write(chunk)
+                                    chunk_size = len(chunk)
+                                    downloaded_bytes += chunk_size
+                                    with lock:
+                                        bar.update(chunk_size)
 
-                    if downloaded_bytes >= expected_bytes:
-                        return
-                    raise requests.RequestException(
-                        f"Part {part_idx} incomplete: {downloaded_bytes}/{expected_bytes} bytes"
-                    )
+                        if downloaded_bytes >= expected_bytes:
+                            return
+                        raise requests.RequestException(
+                            f"Part {part_idx} incomplete: {downloaded_bytes}/{expected_bytes} bytes"
+                        )
 
-                except (
-                    requests.RequestException,
-                    ConnectionResetError,
-                    TimeoutError,
-                    BrokenPipeError,
-                ):
-                    retries += 1
-                    if retries > max_retries:
-                        raise
-                    time.sleep(min(2**retries, 8))
+                    except (
+                        requests.RequestException,
+                        ConnectionResetError,
+                        TimeoutError,
+                        BrokenPipeError,
+                    ):
+                        retries += 1
+                        if retries > max_retries:
+                            raise
+                        time.sleep(min(2**retries, 8))
+            finally:
+                worker_session.close()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(ranges)) as executor:
             futures = [
