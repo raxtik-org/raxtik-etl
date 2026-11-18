@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 import duckdb
+from rich.console import Console
 
 from raxtik_etl import __version__
 from raxtik_etl.reference import RAXTIK_OUTCOME_SEMANTICS
@@ -26,6 +27,8 @@ from raxtik_etl.schema.registry import (
     SCHEMA_REGISTRY,
 )
 from raxtik_etl.transformations.normalization import OUTCOME_LABEL_MAPPING
+
+console = Console()
 
 
 def get_code_license() -> str:
@@ -259,27 +262,12 @@ def populate_package_metadata(
         )
 
     # Dynamic clinical outcome distributions based on canonical mapping
-    outcome_counts: dict[str, int] = {}
     for code, label in OUTCOME_LABEL_MAPPING.items():
         cnt = _scalar("SELECT COUNT(*) FROM outc WHERE outcome_code = ?;", [code])
-        outcome_counts[code] = cnt
         code_slug = label.lower().split(" - ")[0].split(" / ")[0].replace(" ", "_")
         quality_metrics.append(
             (f"outcome_{code.lower()}_{code_slug}_count", str(cnt), "DISTRIBUTIONS", now_ts)
         )
-
-    # Backward-compatible aliases derived from the mapping
-    quality_metrics.append(
-        ("death_outcome_count", str(outcome_counts.get("DE", 0)), "DISTRIBUTIONS", now_ts)
-    )
-    quality_metrics.append(
-        (
-            "hospitalization_outcome_count",
-            str(outcome_counts.get("HO", 0)),
-            "DISTRIBUTIONS",
-            now_ts,
-        )
-    )
 
     # Primary key, composite primary key, distinct report, and referential integrity validations
     for model in CANONICAL_MODELS:
@@ -313,6 +301,10 @@ def populate_package_metadata(
                         now_ts,
                     )
                 )
+                if orphaned > 0:
+                    console.print(
+                        f"[bold yellow]⚠️  Referential integrity warning: Found {orphaned:,} orphaned row(s) in '{tbl}' whose primary_id does not exist in 'demo'[/bold yellow]"
+                    )
 
         pk_cols = model.get_primary_keys()
         if all(c in existing_cols for c in pk_cols):

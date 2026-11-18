@@ -1,7 +1,7 @@
 """Canonical Schema Models for FAERS Adverse Event Data Platform.
 
 This module re-exports all canonical entities, base descriptors, and enums from
-`raxtik_etl.schema.base` and `raxtik_etl.schema.models` for centralized, backward-compatible access.
+`raxtik_etl.schema.base` and `raxtik_etl.schema.models` for centralized canonical access.
 """
 
 from __future__ import annotations

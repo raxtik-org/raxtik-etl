@@ -88,9 +88,9 @@ uv pip install -e ".[dev,faers]"
 Generate a standalone DuckDB database and ZSTD-compressed Parquet directory from a raw quarterly extract:
 
 ```bash
-raxtik-etl build-package \
+raxtik-etl build \
     --source faers \
-    --release 2004Q1 \
+    --data-period 2004Q1 \
     --zip-path data/raw/archives_cache/2004q1_ascii.zip \
     --output-dir data/packages
 ```
@@ -102,7 +102,7 @@ Output:
 ### 3. Inspect Package Metadata & Quality Metrics
 
 ```bash
-raxtik-etl inspect-package --release 2004Q1 --package-dir data/packages
+raxtik-etl inspect-package --data-period 2004Q1 --package-dir data/packages
 ```
 
 Displays package version, signature ID, fact record counts, and canonical data quality indicators.
@@ -183,7 +183,7 @@ my_pv_source = "my_package.adapter:MyCustomSourceAdapter"
 
 3. `raxtik-etl` will automatically discover and load the adapter:
 ```bash
-raxtik-etl build-package --source my_pv_source --release 2024Q1 --zip-path /path/to/archive.zip
+raxtik-etl build --source my_pv_source --data-period 2024Q1 --zip-path /path/to/archive.zip
 ```
 
 ---

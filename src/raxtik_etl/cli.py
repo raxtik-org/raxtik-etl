@@ -46,7 +46,10 @@ def build_package_cmd(
         "faers", "--source", "-s", help="Source connector name (e.g. faers)"
     ),
     data_period: str = typer.Option(
-        "2004Q1", "--data-period", "-d", help="Quarterly data period identifier (e.g. 2004Q1)"
+        ...,
+        "--data-period",
+        "-d",
+        help="Quarterly data period identifier (e.g. 2004Q1)",
     ),
     zip_path: Optional[Path] = typer.Option(
         None, "--zip-path", "-z", help="Path to source archive/zip file"
@@ -74,7 +77,7 @@ def build_package_cmd(
         help="Overwrite existing local package files and re-build (default: False)",
     ),
 ) -> None:
-    """Builds a standalone DuckDB and/or Parquet package for a single quarterly release."""
+    """Builds a standalone DuckDB and/or Parquet package for a single quarterly data period."""
     # 1. Resolve source connector dynamically from plugin registry
     try:
         adapter = get_source_adapter(source)
@@ -271,17 +274,21 @@ def build_cmd(
             force=force,
             batch_size_gb=batch_size_gb,
         )
-    else:
-        target_period = data_period or "2004Q1"
+    elif data_period:
         build_package_cmd(
             source=source,
-            data_period=target_period,
+            data_period=data_period,
             zip_path=zip_path,
             output_dir=output_dir,
             format=format,
             delete_ascii=delete_ascii,
             force=force,
         )
+    else:
+        console.print(
+            "[bold red]Error: You must specify --data-period (e.g. 2004Q1) or both --start and --end to build a package.[/bold red]"
+        )
+        raise typer.Exit(code=1)
 
 
 def _get_process_rss_mb() -> float:
@@ -544,8 +551,8 @@ def batch_build_cmd(
 
 @app.command("consolidate")
 def consolidate_cmd(
-    start: str = typer.Option("2004Q1", "--start", help="Starting period release (e.g. 2004Q1)"),
-    end: str = typer.Option("2006Q4", "--end", help="Ending period release (e.g. 2006Q4)"),
+    start: str = typer.Option("2004Q1", "--start", help="Starting data period (e.g. 2004Q1)"),
+    end: str = typer.Option("2006Q4", "--end", help="Ending data period (e.g. 2006Q4)"),
     package_dir: Optional[Path] = typer.Option(
         None, "--package-dir", "-p", help="Directory containing individual packages"
     ),
