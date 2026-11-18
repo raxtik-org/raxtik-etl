@@ -79,7 +79,10 @@ def _parallel_range_download(
                         "Accept-Encoding": "identity",
                         "Range": f"bytes={curr_start}-{end}",
                     }
-                    resp = active_session.get(url, headers=headers, stream=True, timeout=timeout)
+                    read_timeout = (min(15, timeout), min(25, timeout))
+                    resp = active_session.get(
+                        url, headers=headers, stream=True, timeout=read_timeout
+                    )
                     resp.raise_for_status()
 
                     mode = "ab" if downloaded_bytes > 0 else "wb"
@@ -210,7 +213,10 @@ def stream_download(
                 return
 
     # If the remote server supports HTTP Range and file is >= 4 MB, execute fast parallel multipart download
-    if request_url and total_size >= 4 * 1024 * 1024 and downloaded == 0:
+    if request_url and total_size >= 4 * 1024 * 1024:
+        # Clear any stale partial sequential temp file so workers can download parallel chunks cleanly
+        if tmp_path.exists() and total_size > 0 and downloaded < total_size:
+            tmp_path.unlink(missing_ok=True)
         try:
             if response:
                 try:
