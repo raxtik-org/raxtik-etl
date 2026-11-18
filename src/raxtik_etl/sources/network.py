@@ -6,8 +6,11 @@ shared across data source fetchers and distribution clients.
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
+import threading
 import time
+import zipfile
 from pathlib import Path
 from typing import Optional, Union
 
@@ -15,6 +18,124 @@ import requests
 from tqdm import tqdm
 
 DEFAULT_HTTP_TIMEOUT: int = int(os.getenv("RAXTIK_HTTP_TIMEOUT", "120"))
+DEFAULT_PARALLEL_WORKERS: int = int(os.getenv("RAXTIK_DOWNLOAD_WORKERS", "6"))
+
+
+def _parallel_range_download(
+    url: str,
+    target_path: Path,
+    total_size: int,
+    *,
+    num_workers: int = DEFAULT_PARALLEL_WORKERS,
+    timeout: int = DEFAULT_HTTP_TIMEOUT,
+    desc: Optional[str] = None,
+    session: Optional[requests.Session] = None,
+    max_retries: int = 5,
+) -> None:
+    """Downloads a file using concurrent HTTP Range requests across multiple worker threads."""
+    tmp_path = target_path.with_name(f".tmp_{target_path.name}")
+    num_workers = max(1, min(num_workers, 12))
+    chunk_len = (total_size + num_workers - 1) // num_workers
+
+    ranges: list[tuple[int, int, int]] = []
+    for i in range(num_workers):
+        start = i * chunk_len
+        end = min((i + 1) * chunk_len - 1, total_size - 1)
+        if start <= end:
+            ranges.append((i, start, end))
+
+    bar_desc = desc or f"Downloading {target_path.name}"
+    lock = threading.Lock()
+    active_session = session or requests.Session()
+
+    with tqdm(
+        desc=bar_desc,
+        total=total_size,
+        unit="iB",
+        unit_scale=True,
+        unit_divisor=1024,
+    ) as bar:
+
+        def fetch_range_part(part_idx: int, start: int, end: int) -> None:
+            part_path = tmp_path.with_name(f"{tmp_path.name}.part{part_idx}")
+            expected_bytes = end - start + 1
+            downloaded_bytes = 0
+
+            if part_path.exists():
+                downloaded_bytes = part_path.stat().st_size
+                if downloaded_bytes == expected_bytes:
+                    with lock:
+                        bar.update(downloaded_bytes)
+                    return
+                if downloaded_bytes > expected_bytes:
+                    part_path.unlink(missing_ok=True)
+                    downloaded_bytes = 0
+
+            retries = 0
+            while retries <= max_retries:
+                try:
+                    curr_start = start + downloaded_bytes
+                    headers = {
+                        "Accept-Encoding": "identity",
+                        "Range": f"bytes={curr_start}-{end}",
+                    }
+                    resp = active_session.get(url, headers=headers, stream=True, timeout=timeout)
+                    resp.raise_for_status()
+
+                    mode = "ab" if downloaded_bytes > 0 else "wb"
+                    with open(part_path, mode) as f:
+                        for chunk in resp.iter_content(chunk_size=128 * 1024):
+                            if chunk:
+                                f.write(chunk)
+                                chunk_size = len(chunk)
+                                downloaded_bytes += chunk_size
+                                with lock:
+                                    bar.update(chunk_size)
+
+                    if downloaded_bytes >= expected_bytes:
+                        return
+                    raise requests.RequestException(
+                        f"Part {part_idx} incomplete: {downloaded_bytes}/{expected_bytes} bytes"
+                    )
+
+                except (
+                    requests.RequestException,
+                    ConnectionResetError,
+                    TimeoutError,
+                    BrokenPipeError,
+                ):
+                    retries += 1
+                    if retries > max_retries:
+                        raise
+                    time.sleep(min(2**retries, 8))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(ranges)) as executor:
+            futures = [
+                executor.submit(fetch_range_part, idx, start, end) for idx, start, end in ranges
+            ]
+            concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
+            for f in futures:
+                f.result()
+
+    # Reassemble parts sequentially into tmp_path
+    with open(tmp_path, "wb") as outfile:
+        for idx, _, _ in ranges:
+            part_path = tmp_path.with_name(f"{tmp_path.name}.part{idx}")
+            with open(part_path, "rb") as infile:
+                while True:
+                    buf = infile.read(1024 * 1024)
+                    if not buf:
+                        break
+                    outfile.write(buf)
+            part_path.unlink(missing_ok=True)
+
+    if target_path.suffix.lower() == ".zip" and not zipfile.is_zipfile(tmp_path):
+        tmp_path.unlink(missing_ok=True)
+        raise ValueError(
+            f"Downloaded archive '{tmp_path.name}' is corrupted or incomplete and not a valid zip file."
+        )
+
+    tmp_path.replace(target_path)
 
 
 def stream_download(
@@ -81,72 +202,129 @@ def stream_download(
     if tmp_path.exists():
         downloaded = tmp_path.stat().st_size
         if total_size > 0 and downloaded >= total_size:
-            tmp_path.replace(target_path)
-            return
+            if target_path.suffix.lower() == ".zip" and not zipfile.is_zipfile(tmp_path):
+                tmp_path.unlink(missing_ok=True)
+                downloaded = 0
+            else:
+                tmp_path.replace(target_path)
+                return
 
-    curr_response = response
+    # If the remote server supports HTTP Range and file is >= 4 MB, execute fast parallel multipart download
+    if request_url and total_size >= 4 * 1024 * 1024 and downloaded == 0:
+        try:
+            if response:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+            _parallel_range_download(
+                url=request_url,
+                target_path=target_path,
+                total_size=total_size,
+                desc=bar_desc,
+                timeout=timeout,
+                session=http_session,
+                max_retries=max_retries,
+            )
+            return
+        except Exception as exc:
+            tqdm.write(
+                f"\n[raxtik-etl] Parallel download failed ({exc}). Falling back to sequential stream..."
+            )
+            curr_response = http_session.get(
+                request_url,
+                headers={"Accept-Encoding": "identity"},
+                stream=True,
+                timeout=timeout,
+            )
+    else:
+        curr_response = response
     retries = 0
 
-    with tqdm(
-        desc=bar_desc,
-        total=total_size if total_size > 0 else None,
-        initial=downloaded,
-        unit="iB",
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
-        while True:
-            try:
-                # If resuming from an offset and current response is not already a 206 Partial Content
-                if downloaded > 0 and curr_response.status_code != 206 and request_url:
-                    curr_response.close()
+    try:
+        with tqdm(
+            desc=bar_desc,
+            total=total_size if total_size > 0 else None,
+            initial=downloaded,
+            unit="iB",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as bar:
+            while True:
+                try:
+                    # If resuming from an offset and current response is not already a 206 Partial Content
+                    if downloaded > 0 and curr_response.status_code != 206 and request_url:
+                        curr_response.close()
+                        curr_response = http_session.get(
+                            request_url,
+                            headers={
+                                "Accept-Encoding": "identity",
+                                "Range": f"bytes={downloaded}-",
+                            },
+                            stream=True,
+                            timeout=timeout,
+                        )
+                        if curr_response.status_code != 206:
+                            # Server does not support Range; restart from beginning
+                            downloaded = 0
+                            bar.reset(total=total_size if total_size > 0 else None)
+
+                    file_mode = "ab" if downloaded > 0 else "wb"
+                    with open(tmp_path, file_mode) as f:
+                        for chunk in curr_response.iter_content(chunk_size=chunk_size):
+                            if chunk:
+                                f.write(chunk)
+                                size = len(chunk)
+                                downloaded += size
+                                bar.update(size)
+
+                    # Guard against premature disconnection returning EOF without exception
+                    if total_size > 0 and downloaded < total_size:
+                        raise requests.exceptions.ChunkedEncodingError(
+                            f"Stream ended prematurely: received {downloaded:,} of {total_size:,} bytes"
+                        )
+
+                    # Successful full stream completion
+                    break
+
+                except (
+                    requests.RequestException,
+                    ConnectionResetError,
+                    TimeoutError,
+                    BrokenPipeError,
+                ) as exc:
+                    if curr_response:
+                        try:
+                            curr_response.close()
+                        except Exception:
+                            pass
+                    retries += 1
+                    if retries > max_retries or not request_url:
+                        raise
+                    wait_sec = min(2**retries, 10)
+                    tqdm.write(
+                        f"\n[raxtik-etl] Connection interrupted: {exc}. "
+                        f"Resuming from {downloaded:,} bytes in {wait_sec}s (retry {retries}/{max_retries})..."
+                    )
+                    time.sleep(wait_sec)
                     curr_response = http_session.get(
                         request_url,
                         headers={"Accept-Encoding": "identity", "Range": f"bytes={downloaded}-"},
                         stream=True,
                         timeout=timeout,
                     )
-                    if curr_response.status_code != 206:
-                        # Server does not support Range; restart from beginning
-                        downloaded = 0
-                        bar.reset(total=total_size if total_size > 0 else None)
+    finally:
+        if curr_response:
+            try:
+                curr_response.close()
+            except Exception:
+                pass
 
-                file_mode = "ab" if downloaded > 0 else "wb"
-                with open(tmp_path, file_mode) as f:
-                    for chunk in curr_response.iter_content(chunk_size=chunk_size):
-                        if chunk:
-                            f.write(chunk)
-                            size = len(chunk)
-                            downloaded += size
-                            bar.update(size)
-
-                # Successful stream completion
-                break
-
-            except (
-                requests.RequestException,
-                ConnectionResetError,
-                TimeoutError,
-                BrokenPipeError,
-            ) as exc:
-                retries += 1
-                if retries > max_retries or not request_url:
-                    raise
-                wait_sec = min(2**retries, 10)
-                tqdm.write(
-                    f"\n[raxtik-etl] Connection interrupted: {exc}. "
-                    f"Resuming from {downloaded:,} bytes in {wait_sec}s (retry {retries}/{max_retries})..."
-                )
-                time.sleep(wait_sec)
-                curr_response = http_session.get(
-                    request_url,
-                    headers={"Accept-Encoding": "identity", "Range": f"bytes={downloaded}-"},
-                    stream=True,
-                    timeout=timeout,
-                )
-            finally:
-                if curr_response:
-                    curr_response.close()
+    if target_path.suffix.lower() == ".zip" and not zipfile.is_zipfile(tmp_path):
+        tmp_path.unlink(missing_ok=True)
+        raise ValueError(
+            f"Downloaded archive '{tmp_path.name}' is corrupted or incomplete and not a valid zip file."
+        )
 
     tmp_path.replace(target_path)
 
