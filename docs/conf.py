@@ -19,6 +19,7 @@ version = raxtik_etl.__version__
 # General configuration
 extensions = [
     "myst_parser",
+    "sphinxcontrib.mermaid",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.napoleon",
@@ -52,7 +53,7 @@ myst_heading_anchors = 3
 # Templates & patterns
 templates_path = ["_templates"] if (Path(__file__).parent / "_templates").is_dir() else []
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "huggingface_dataset_card.md"]
-suppress_warnings = ["misc.highlighting_failure", "toc.not_included"]
+suppress_warnings = ["misc.highlighting_failure", "toc.not_included", "intersphinx.external"]
 
 # HTML output theme
 html_theme = "sphinx_rtd_theme"

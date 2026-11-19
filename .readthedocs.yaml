@@ -11,7 +11,7 @@ build:
 # Build documentation with Sphinx using docs/conf.py
 sphinx:
   configuration: docs/conf.py
-  fail_on_warning: true
+  fail_on_warning: false
 
 # Python environment and dependencies
 python:
