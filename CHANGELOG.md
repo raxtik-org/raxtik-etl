@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0.dev1] - 2026-11-19
+## 0.1.0.dev1 - 2026-11-19
+
+**Full Changelog**: https://github.com/raxtik-org/raxtik-etl/compare/v0.1.0.dev0...v0.1.0.dev1
 
 ### Added
 - Remote DuckDB querying support over Hugging Face Hub via `httpfs` without requiring prior full-package downloads (`connect_remote_hf_duckdb`).
@@ -18,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hardened quarterly package and cohort staging using atomic promotions.
 - Hardened download verification with SHA-256 validation.
 
-## [0.1.0.dev0] - 2026-10-25
+## 0.1.0.dev0 - 2026-10-25
 
 ### Initial Release
 - Canonical 7-entity pharmacovigilance data engine and longitudinal deduplication.
