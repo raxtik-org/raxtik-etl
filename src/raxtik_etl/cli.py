@@ -119,6 +119,7 @@ def build_package_cmd(
         )
         return
 
+    archive_file: Optional[Path] = None
     if zip_path:
         if not zip_path.exists():
             console.print(f"[bold red]Specified zip path not found: {zip_path}[/bold red]")
