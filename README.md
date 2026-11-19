@@ -35,10 +35,10 @@ Every source connector projects raw records into an analytical star-schema archi
 | **`rpsr`** | Report Sources | `(primary_id, rpsr_code)` | `primary_id` → `demo.primary_id` | Reporting channel: Health Professional (`HP`), Consumer (`CSM`), Study (`SDY`), etc. |
 | **`cases`** | Authoritative Deduplicated View | `case_id` | Derived from `demo` | Precomputed deterministic resolution to latest report version per `case_id`. |
 
-📖 **Interactive Visual ER Diagram**:
-- View the interactive rendered diagram on **[ReadTheDocs: Canonical Data Model](https://raxtik-etl.readthedocs.io/en/latest/schema/canonical_data_model.html)**.
-- View the Mermaid diagram source on **[GitHub: docs/schema/canonical_data_model.md](docs/schema/canonical_data_model.md)**.
-- Complete codelists: **[Coded Values Reference](docs/schema/code_list_history.md)**.
+📖 **Visual Entity-Relationship Diagram**:
+- 📊 **[Full Interactive ER Diagram (Mermaid)](ER_DIAGRAM.md)**
+- 🌐 **[ReadTheDocs: Canonical Data Model](https://raxtik-etl.readthedocs.io/en/latest/schema/canonical_data_model.html)**
+- 📚 **[Coded Values Reference](docs/schema/code_list_history.md)**
 
 ---
 
