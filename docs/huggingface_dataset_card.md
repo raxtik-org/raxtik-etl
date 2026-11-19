@@ -75,79 +75,48 @@ raxtik-org/faers-safety-database/
 
 Every quarterly dataset projects heterogeneous raw FDA ASCII files across historical schema eras (**S1**, **S2**, **S3**) into a unified star-schema architecture:
 
-```mermaid
-erDiagram
-    demo ||--o{ drug : "primary_id"
-    demo ||--o{ reac : "primary_id"
-    demo ||--o{ outc : "primary_id"
-    demo ||--o{ rpsr : "primary_id"
-    drug ||--o{ indi : "primary_id, drug_seq"
-    drug ||--o{ ther : "primary_id, drug_seq"
-
-    demo {
-        BIGINT primary_id PK "Unique submission report ID"
-        BIGINT case_id "Unique patient case identifier"
-        INTEGER case_version "Report version number"
-        VARCHAR event_country "Country where reaction occurred"
-        VARCHAR reporter_country_code "ISO 3166-1 alpha-2"
-        DATE fda_date "Receipt date at FDA"
-        VARCHAR age_group_code "ICH life stage classification"
-        DOUBLE standard_age_years "Normalized age in decimal years"
-        VARCHAR standard_sex_label "Male / Female / Unknown"
-        DOUBLE standard_weight_kg "Normalized patient weight in kg"
-        VARCHAR reporter_occupation_label "Physician, Pharmacist, Consumer..."
-        VARCHAR report_type_label "Expedited 15-day, Periodic, Direct..."
-    }
-
-    drug {
-        BIGINT primary_id PK,FK "References demo.primary_id (Composite PK Part 1)"
-        INTEGER drug_seq PK "Exposure sequence per report (Composite PK Part 2)"
-        VARCHAR role_code "Role: PS, SS, C, I"
-        VARCHAR standard_role_label "Primary Suspect, Concomitant..."
-        VARCHAR reported_drug_name "Reported medicinal trade/brand name"
-        VARCHAR active_ingredient "Normalized generic active substance"
-        VARCHAR route "Administration route (Oral, IV...)"
-        VARCHAR dose_form "Dosage formulation (Tablet, Solution...)"
-        DOUBLE cumulative_dose "Normalized cumulative amount"
-        VARCHAR cumulative_dose_unit_label "Metric dose unit (mg, mL...)"
-    }
-
-    reac {
-        BIGINT primary_id PK,FK "References demo.primary_id (Composite PK Part 1)"
-        VARCHAR reported_reaction_term PK "MedDRA Preferred Term (Composite PK Part 2)"
-        BIGINT reaction_seq "Reaction sequence ordinal"
-        VARCHAR drug_reaction_action "Action taken with drug"
-    }
-
-    outc {
-        BIGINT primary_id PK,FK "References demo.primary_id (Composite PK Part 1)"
-        VARCHAR outc_code PK "Seriousness criterion: DE, HO, LT, DS, CA, RI, OT (Composite PK Part 2)"
-        VARCHAR standard_outc_label "Death, Hospitalization, Life-threatening..."
-        BOOLEAN is_death "Flag for fatal outcome (DE)"
-        BOOLEAN is_serious "Flag for serious adverse event"
-    }
-
-    indi {
-        BIGINT primary_id PK,FK "Composite PK Part 1 / References drug(primary_id, drug_seq)"
-        INTEGER indi_drug_seq PK,FK "Composite PK Part 2 / References drug(primary_id, drug_seq)"
-        VARCHAR reported_indication_term PK "MedDRA Indication Term (Composite PK Part 3)"
-        VARCHAR reported_indication "Reported condition / disease treated"
-    }
-
-    ther {
-        BIGINT primary_id PK,FK "Composite PK Part 1 / References drug(primary_id, drug_seq)"
-        INTEGER dsg_drug_seq PK,FK "Composite PK Part 2 / References drug(primary_id, drug_seq)"
-        DATE start_date "Therapy initiation date"
-        DATE end_date "Therapy cessation date"
-        DOUBLE duration_days "Standardized duration in days"
-    }
-
-    rpsr {
-        BIGINT primary_id PK,FK "References demo.primary_id (Composite PK Part 1)"
-        VARCHAR rpsr_code PK "Report source classification code (Composite PK Part 2)"
-        VARCHAR standard_rpsr_label "Health Professional, Study, Consumer..."
-    }
+```text
+                          ┌────────────────────────┐
+                          │   demo (Demographics)  │
+                          │────────────────────────│
+                          │ PK: primary_id         │
+                          │     case_id            │
+                          └───────────┬────────────┘
+                                      │
+            ┌─────────────────────────┼─────────────────────────┬─────────────────────────┐
+            │ 1:N                     │ 1:N                     │ 1:N                     │ 1:N
+            ▼                         ▼                         ▼                         ▼
+┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────┐
+│  drug (Exposures)     │ │  reac (Reactions)     │ │  outc (Outcomes)      │ │  rpsr (Sources)       │
+│───────────────────────│ │───────────────────────│ │───────────────────────│ │───────────────────────│
+│ PK: primary_id        │ │ PK: primary_id        │ │ PK: primary_id        │ │ PK: primary_id        │
+│ PK: drug_seq          │ │ PK: reaction_term     │ │ PK: outc_code         │ │ PK: rpsr_code         │
+└───────────┬───────────┘ └───────────────────────┘ └───────────────────────┘ └───────────────────────┘
+            │
+            ├─────────────────────────┐
+            │ 1:N                     │ 1:N
+            ▼                         ▼
+┌───────────────────────┐ ┌───────────────────────┐
+│  indi (Indications)   │ │  ther (Therapy Dates) │
+│───────────────────────│ │───────────────────────│
+│ PK: primary_id        │ │ PK: primary_id        │
+│ PK: indi_drug_seq     │ │ PK: dsg_drug_seq      │
+│ PK: indication_term   │ └───────────────────────┘
+└───────────────────────┘
 ```
+
+### Relational Schema & Composite Keys
+
+| Table | Entity / Domain | Primary Key (Composite) | Foreign Key Relationship | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **`demo`** | Case Submissions & Demographics | `primary_id` | *(Root submission table)* | Patient age in decimal years, weight in kg, sex, country, receipt date. |
+| **`drug`** | Drug Products & Regimens | `(primary_id, drug_seq)` | `primary_id` → `demo.primary_id` | Reported brand name, active substance, route, form, role code (`PS`, `SS`, `C`, `I`). |
+| **`reac`** | Adverse Reactions | `(primary_id, reported_reaction_term)` | `primary_id` → `demo.primary_id` | MedDRA Preferred Terms (PT) describing adverse events. |
+| **`outc`** | Patient Outcomes | `(primary_id, outc_code)` | `primary_id` → `demo.primary_id` | Clinical outcomes: Death (`DE`), Hospitalization (`HO`), Disability (`DS`), etc. |
+| **`indi`** | Therapy Indications | `(primary_id, indi_drug_seq, reported_indication_term)` | `(primary_id, indi_drug_seq)` → `drug(primary_id, drug_seq)` | Medical conditions for which medications were prescribed. |
+| **`ther`** | Therapy Timelines | `(primary_id, dsg_drug_seq)` | `(primary_id, dsg_drug_seq)` → `drug(primary_id, drug_seq)` | Therapy start date, end date, and duration in days. |
+| **`rpsr`** | Report Sources | `(primary_id, rpsr_code)` | `primary_id` → `demo.primary_id` | Reporting channel: Health Professional (`HP`), Consumer (`CSM`), Study (`SDY`), etc. |
+| **`cases`** | Authoritative Deduplicated View | `case_id` | Derived from `demo` | Precomputed deterministic resolution to latest report version per `case_id`. |
 
 ### Table Definitions
 
