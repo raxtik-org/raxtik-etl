@@ -31,6 +31,10 @@ def test_download_package_local_hit(tmp_path: Path):
 
 def test_upload_package_requires_token(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "raxtik_etl.distribution.huggingface._resolve_hf_token",
+        lambda tok=None: None if tok is None else tok,
+    )
 
     fake_pkg = tmp_path / "faers_2004Q1.duckdb"
     fake_pkg.write_bytes(b"dummy")

@@ -59,8 +59,9 @@ class BaseDataset:
         timeout: int = DEFAULT_HTTP_TIMEOUT,
         revision: Optional[str] = None,
         tier: str = "bronze",
+        remote: bool = False,
     ) -> None:
-        """Initializes a local dataset connection, optionally downloading if missing.
+        """Initializes a dataset connection (local or remote streaming via HTTP).
 
         Args:
             data_period: Temporal coverage period identifier (e.g., '2004Q1').
@@ -70,7 +71,8 @@ class BaseDataset:
             hf_repo: Optional Hugging Face dataset repository ID override.
             timeout: HTTP request timeout in seconds when downloading.
             revision: Hugging Face Git revision or tag (e.g., 'main' or 'v0.1.0').
-            tier: Data lake tier on Hugging Face (e.g. 'bronze', 'silver', 'gold'). Defaults to 'bronze'.
+            tier: Dataset release tier ('bronze' or 'silver'). Defaults to 'bronze'.
+            remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
 
         Raises:
             ValueError: If data_period is empty.
@@ -87,6 +89,21 @@ class BaseDataset:
         self.pkg_dir = Path(package_dir) if package_dir else get_default_package_dir()
         self.duckdb_path = self.pkg_dir / f"{self.source}_{self.data_period}.duckdb"
         self.tier = tier
+        self.remote = remote
+        self._remote_url: Optional[str] = None
+
+        if self.remote:
+            from raxtik_etl.distribution.huggingface import connect_remote_hf_duckdb
+
+            self._remote_url, self._con = connect_remote_hf_duckdb(
+                repo_id=self.hf_repo,
+                source=self.source,
+                data_period=self.data_period,
+                revision=revision,
+                tier=self.tier,
+            )
+            self._validate_package_compatibility()
+            return
 
         if not self.duckdb_path.exists():
             if download_if_missing:
@@ -106,7 +123,7 @@ class BaseDataset:
             else:
                 raise FileNotFoundError(
                     f"Package for data period {self.data_period} not found at {self.duckdb_path}. "
-                    f"Build it locally using `raxtik-etl build-package --source {self.source} --data-period {self.data_period}` "
+                    f"Build it locally using `raxtik-etl build --data-period {self.data_period}` "
                     f"or pass `download_if_missing=True` to download from Hugging Face."
                 )
 
@@ -123,6 +140,7 @@ class BaseDataset:
         timeout: int = DEFAULT_HTTP_TIMEOUT,
         revision: Optional[str] = None,
         tier: str = "bronze",
+        remote: bool = False,
     ) -> BaseDataset:
         """Loads a safety data package, automatically downloading from Hugging Face Hub if not present locally.
 
@@ -133,20 +151,22 @@ class BaseDataset:
             hf_repo: Optional Hugging Face dataset repository override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag (defaults to version tag or 'main').
-            tier: Data lake tier on Hugging Face (e.g. 'bronze', 'silver', 'gold'). Defaults to 'bronze'.
+            tier: Dataset release tier ('bronze' or 'silver'). Defaults to 'bronze'.
+            remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
 
         Returns:
-            Instantiated BaseDataset connected to downloaded DuckDB package.
+            Instantiated BaseDataset connected to downloaded or remotely attached DuckDB package.
         """
         return cls(
             data_period=data_period,
             source=source,
             package_dir=package_dir,
-            download_if_missing=True,
+            download_if_missing=not remote,
             hf_repo=hf_repo,
             timeout=timeout,
             revision=revision,
             tier=tier,
+            remote=remote,
         )
 
     def compute_sha256(self) -> str:
@@ -155,6 +175,10 @@ class BaseDataset:
         Returns:
             Hexadecimal SHA-256 digest string.
         """
+        if self.remote:
+            raise NotImplementedError(
+                "SHA-256 checksum computation requires a local file. Pass `remote=False` to download."
+            )
         from raxtik_etl.packaging.builder import compute_sha256
 
         return compute_sha256(self.duckdb_path)
@@ -172,6 +196,8 @@ class BaseDataset:
         Raises:
             ValueError: If computed checksum does not match expected checksum.
         """
+        if self.remote:
+            return True
         sha_file = self.duckdb_path.with_suffix(".duckdb.sha256")
         target_sha = expected_sha256
         if target_sha is None and sha_file.exists():
@@ -370,6 +396,7 @@ class Dataset(BaseDataset):
         timeout: int = DEFAULT_HTTP_TIMEOUT,
         revision: Optional[str] = None,
         tier: str = "bronze",
+        remote: bool = False,
     ) -> BaseDataset:  # type: ignore[misc]
         """Instantiates either a specialized source client subclass or BaseDataset.
 
@@ -381,7 +408,8 @@ class Dataset(BaseDataset):
             hf_repo: Optional Hugging Face dataset repository ID override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag.
-            tier: Data lake tier on Hugging Face (defaults to 'bronze').
+            tier: Dataset release tier ('bronze' or 'silver'). Defaults to 'bronze'.
+            remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
 
         Returns:
             Configured dataset client instance.
@@ -397,6 +425,7 @@ class Dataset(BaseDataset):
                 timeout=timeout,
                 revision=revision,
                 tier=tier,
+                remote=remote,
             )
         instance = super().__new__(cls)
         return instance
@@ -411,6 +440,7 @@ class Dataset(BaseDataset):
         timeout: int = DEFAULT_HTTP_TIMEOUT,
         revision: Optional[str] = None,
         tier: str = "bronze",
+        remote: bool = False,
     ) -> BaseDataset:
         """Loads a safety data package, automatically downloading from Hugging Face Hub if not present locally.
 
@@ -421,10 +451,11 @@ class Dataset(BaseDataset):
             hf_repo: Optional Hugging Face dataset repository override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag (defaults to version tag or 'main').
-            tier: Data lake tier on Hugging Face (defaults to 'bronze').
+            tier: Dataset release tier ('bronze' or 'silver'). Defaults to 'bronze'.
+            remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
 
         Returns:
-            Instantiated Dataset connected to downloaded DuckDB package.
+            Instantiated Dataset connected to downloaded or remotely attached DuckDB package.
         """
         src = source or "faers"
         target_cls = get_dataset_client(src)
@@ -441,14 +472,16 @@ class Dataset(BaseDataset):
                 timeout=timeout,
                 revision=revision,
                 tier=tier,
+                remote=remote,
             )
         return cls(
             data_period=data_period,
             source=src,
             package_dir=package_dir,
-            download_if_missing=True,
+            download_if_missing=not remote,
             hf_repo=hf_repo,
             timeout=timeout,
             revision=revision,
             tier=tier,
+            remote=remote,
         )

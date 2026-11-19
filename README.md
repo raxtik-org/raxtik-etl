@@ -8,211 +8,247 @@
 
 High-performance canonical pharmacovigilance (PV) data engine and packaging toolkit powered by **DuckDB** and **Polars**.
 
-`raxtik-etl` provides the canonical schema definitions, deduplication algorithms, case resolution logic, and self-describing dataset packaging for safety surveillance datasets. It is completely decoupled from source-specific ingestion logic via an extensible **Source Adapter Protocol**.
+`raxtik-etl` provides canonical schema definitions, multi-version case deduplication algorithms, and self-describing dataset packaging (DuckDB & Parquet) for safety surveillance datasets. It is completely decoupled from source-specific ingestion logic via an extensible **Source Adapter Protocol**.
+
+👉 **Architecture & Design**: See [Architecture Overview](docs/architecture.md) for plugin decoupling and internal pipeline design.
 
 ---
 
-## 🏗️ Architecture
+## 🏛️ Canonical Data Model & Entity Relationships
 
-```text
-                    SOURCE CONNECTORS (Plugins)
-                               │
-               ┌───────────────┼───────────────┐
-               ▼               ▼               ▼
-      raxtik-source-faers  future-source   future-source
-      (FDA AERS/FAERS)    (EudraVigilance)   (VigiBase)
-               │
-               │ implements SourceAdapter
-               ▼
-   ┌────────────────────────────────────────────────────────┐
-   │                       raxtik-etl                       │
-   │  1. Canonical Schemas (demo, drug, reac, outc, etc.)   │
-   │  2. Deterministic Case Resolution & Deduplication      │
-   │  3. Standardized Transformations & Unit Normalization  │
-   │  4. Quality Control & Quality Summary Reporting        │
-   │  5. Self-describing Packaging (DuckDB & Parquet)       │
-   └───────────────────────────┬────────────────────────────┘
-                               │
-                               ▼
-   ┌────────────────────────────────────────────────────────┐
-   │                   Packaged Artifacts                   │
-   │  - data/packages/faers_{release}.duckdb (Indexed SQL)  │
-   │  - data/packages/faers_{release}.parquet/ (ZSTD Shards)│
-   └───────────────────────────┬────────────────────────────┘
-                               │
-                               ▼
-   ┌────────────────────────────────────────────────────────┐
-   │                 Downstream Ecosystem                   │
-   │  - raxtik-parser   (Synthetic narratives, clinical ML) │
-   │  - raxtik-api      (Case search, signal detection)     │
-   │  - raxtik-studio   (Interactive safety workbench)      │
-   └────────────────────────────────────────────────────────┘
+Every source connector projects raw records into an analytical star-schema architecture:
+
+- **7 Core Fact Tables**: Normalized clinical entities (`demo`, `drug`, `reac`, `outc`, `indi`, `ther`, `rpsr`).
+- **Authoritative Case View (`cases`)**: Deduplicates multi-version submissions across reporting periods (`case_id` / `canonical_case_version` / `fda_date`) and computes key safety flags (`has_serious_outcome`, `is_death`, `is_expedited`).
+- **16 Reference Dimensions (`_code_*`)**: Embedded lookup tables mapping ISO country codes, ICH E2B(R2/R3) guidelines, and FDA clinical codelists.
+
+```mermaid
+erDiagram
+    demo ||--o{ drug : "primary_id"
+    demo ||--o{ reac : "primary_id"
+    demo ||--o{ outc : "primary_id"
+    demo ||--o{ rpsr : "primary_id"
+    drug ||--o{ indi : "primary_id, drug_seq"
+    drug ||--o{ ther : "primary_id, drug_seq"
+
+    demo {
+        BIGINT primary_id PK "Unique submission report ID"
+        BIGINT case_id "Unique patient case identifier"
+        INTEGER case_version "Report version number"
+        VARCHAR event_country "Country where reaction occurred"
+        VARCHAR reporter_country_code "ISO 3166-1 alpha-2"
+        DATE fda_date "Receipt date at FDA"
+        VARCHAR age_group_code "ICH life stage classification"
+        DOUBLE standard_age_years "Normalized age in decimal years"
+        VARCHAR standard_sex_label "Male / Female / Unknown"
+        DOUBLE standard_weight_kg "Normalized patient weight in kg"
+        VARCHAR reporter_occupation_label "Physician, Pharmacist, Consumer..."
+        VARCHAR report_type_label "Expedited 15-day, Periodic, Direct..."
+    }
+
+    drug {
+        BIGINT primary_id FK "References demo.primary_id"
+        INTEGER drug_seq PK "Unique exposure index per case"
+        VARCHAR role_code "Role: PS, SS, C, I"
+        VARCHAR standard_role_label "Primary Suspect, Concomitant..."
+        VARCHAR reported_drug_name "Reported medicinal trade/brand name"
+        VARCHAR active_ingredient "Normalized generic active substance"
+        VARCHAR route "Administration route (Oral, IV...)"
+        VARCHAR dose_form "Dosage formulation (Tablet, Solution...)"
+        DOUBLE cumulative_dose "Normalized cumulative amount"
+        VARCHAR cumulative_dose_unit_label "Metric dose unit (mg, mL...)"
+    }
+
+    reac {
+        BIGINT primary_id FK "References demo.primary_id"
+        VARCHAR reported_reaction_term PK "MedDRA Preferred Term"
+        BIGINT reaction_seq "Reaction sequence ordinal"
+        VARCHAR drug_reaction_action "Action taken with drug"
+    }
+
+    outc {
+        BIGINT primary_id FK "References demo.primary_id"
+        VARCHAR outc_code PK "Seriousness criterion: DE, HO, LT, DS, CA, RI, OT"
+        VARCHAR standard_outc_label "Death, Hospitalization, Life-threatening..."
+        BOOLEAN is_death "Flag for fatal outcome (DE)"
+        BOOLEAN is_serious "Flag for serious adverse event"
+    }
+
+    indi {
+        BIGINT primary_id FK "References drug.primary_id"
+        INTEGER indi_drug_seq FK "References drug.drug_seq"
+        VARCHAR indi_pt PK "MedDRA Preferred Term for clinical indication"
+        VARCHAR reported_indication "Reported condition / disease treated"
+    }
+
+    ther {
+        BIGINT primary_id FK "References drug.primary_id"
+        INTEGER dsg_drug_seq FK "References drug.drug_seq"
+        DATE start_date "Therapy initiation date"
+        DATE end_date "Therapy cessation date"
+        DOUBLE duration_days "Standardized duration in days"
+    }
+
+    rpsr {
+        BIGINT primary_id FK "References demo.primary_id"
+        VARCHAR rpsr_code PK "Report source classification code"
+        VARCHAR standard_rpsr_label "Health Professional, Study, Consumer..."
+    }
 ```
-
-### Decoupled Source Plugins
-`raxtik-etl` contains **zero** source-specific proprietary parsing, column aliases, or archive file logic. Connectors such as [`raxtik-source-faers`](https://github.com/raxtik-org/raxtik-source-faers) implement the `SourceAdapter` protocol and register via Python entry points (`raxtik_etl.sources`).
-
----
-
-## 🏛️ Canonical Data Model
-
-Every source connector projects raw records into a high-performance **star-schema architecture** consisting of:
-
-- **7 Fact Tables**: Normalized clinical entities (`demo`, `drug`, `reac`, `outc`, `indi`, `ther`, `rpsr`).
-- **Authoritative Case View (`cases`)**: Deduplicates multi-version submissions across reporting periods (`CASEID` / `CASEVERSION` / `FDA_DT`) and computes key safety flags (`has_serious_outcome`, `is_death`, `is_expedited`).
-- **16 Embedded Reference Dimensions (`_code_*`)**: Zero-dependency lookup tables mapping ISO 3166-1 country codes, ICH E2B(R2/R3) guidelines, and FDA CDER clinical codelists.
-- **Zero Redundancy**: Strictly consolidates legacy duplicate column aliases in favor of clean canonical columns and inline human-readable labels (`*_label`).
 
 👉 **Complete Specification**: See the full **[Canonical Data Model Specification](docs/schema/canonical_data_model.md)** and **[Coded Values Reference](docs/schema/code_list_history.md)**.
 
 ---
 
+## 🌐 Precompiled Dataset on Hugging Face
+
+All **91 quarterly packages** from **2004Q1 through 2026Q3** (20+ million safety reports) are compiled and publicly accessible on Hugging Face:
+🔗 **[raxtik-org/faers-safety-database](https://huggingface.co/datasets/raxtik-org/faers-safety-database)**
+
+Organized under `bronze/<YEAR>/` as standalone DuckDB databases (`.duckdb`) and ZSTD Parquet tables (`.parquet/`).
+
+---
+
+## 📦 Installation
+
+```bash
+pip install raxtik-etl raxtik-source-faers
+```
+
+For developer setup and contributing from source, see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+---
+
 ## 🚀 Quickstart
 
-### 1. Installation
-
-Requires Python >= 3.11 (Python 3.13 recommended) and [`uv`](https://github.com/astral-sh/uv).
+### 1. Download or Build via CLI
 
 ```bash
-# Set local Python version
-pyenv local 3.13.5
+# Recommended: Download precompiled package directly from Hugging Face Hub (zero auth required)
+raxtik-etl download -d 2004Q1
 
-# Create virtual environment and install raxtik-etl with FAERS plugin
-uv venv --python 3.13.5 .venv
-source .venv/bin/activate
-uv pip install -e ".[dev,faers]"
+# Inspect package schema and data quality indicators
+raxtik-etl inspect -d 2004Q1
+
+# Build a quarterly package locally from raw FDA archives
+raxtik-etl build -d 2004Q1 --source faers
 ```
 
-### 2. Build a Quarterly Package via CLI
+> [!NOTE]
+> **Do I need to upload?**
+> Standard users and researchers **never** need to use `raxtik-etl upload`. All 91 quarterly packages are already hosted and publicly accessible. The `upload` command is strictly for repository maintainers or organizations publishing custom builds to their own Hugging Face dataset repository (`--repo-id <org/repo>`).
 
-Generate a standalone DuckDB database and ZSTD-compressed Parquet directory from a raw quarterly extract:
-
-```bash
-raxtik-etl build \
-    --source faers \
-    --data-period 2004Q1 \
-    --zip-path data/raw/archives_cache/2004q1_ascii.zip \
-    --output-dir data/packages
-```
-
-Output:
-- `data/packages/faers_2004Q1.duckdb` (Indexed analytical database)
-- `data/packages/faers_2004Q1.parquet/` (ZSTD-compressed columnar tables)
-
-### 3. Inspect Package Metadata & Quality Metrics
-
-```bash
-raxtik-etl inspect-package --data-period 2004Q1 --package-dir data/packages
-```
-
-Displays package version, signature ID, fact record counts, and canonical data quality indicators.
+👉 **CLI Reference**: See the full **[CLI Reference Guide](docs/cli_reference.md)** for all commands and parameters.
 
 ---
 
 ## 💻 Python SDK Usage
 
-Downstream applications can query packages using the high-performance `Dataset` client with zero-copy [Polars](https://pola.rs/) DataFrames:
+Load and query precompiled safety packages directly in Python:
 
 ```python
-from raxtik_etl import Dataset
+from raxtik_etl import FAERS
 
-# Stream precompiled package directly from Hugging Face Hub (zero auth required)
-with Dataset.from_hf("2004Q1", source="faers") as ds:
-    # 1. Print self-describing metadata & data quality report
-    ds.print_summary()
-
-    # 2. Retrieve authoritative resolved cases
-    cases_df = ds.cases(limit=1000)
-    print(
-        cases_df.select(
-            [
-                "case_id",
-                "primary_id",
-                "canonical_case_version",
-                "standard_age_years",
-                "standard_sex_label",
-                "has_serious_outcome",
-            ]
-        )
-    )
-
-    # 3. Query primary suspect drugs and reactions
-    drugs_df = ds.drugs(limit=100)
-    reactions_df = ds.reactions(limit=100)
-```
-
-Alternatively, when using [`raxtik-source-faers`](https://github.com/raxtik-org/raxtik-source-faers) directly:
-
-```python
-from raxtik_source_faers import FAERS
-
-with FAERS.from_hf("2004Q1") as faers:
+# 1. Default (Recommended): Downloads once, caches locally, and queries in milliseconds
+with FAERS.from_hf("2024Q1") as faers:
+    faers.print_summary()
     cases_df = faers.cases(limit=1000)
+    drugs_df = faers.drugs(limit=1000)
+    reactions_df = faers.reactions(limit=1000)
+
+# 2. Zero Local Disk (Remote Streaming): Streams over HTTPS directly from Hugging Face
+with FAERS.from_hf("2024Q1", remote=True) as faers:
+    cases_df = faers.cases(limit=100)
+    print(cases_df)
 ```
 
 ---
 
-## 🔌 Implementing a Custom Source Adapter
+## ⚡ Remote Querying via DuckDB (Zero Local Storage)
 
-Adding a new pharmacovigilance source (e.g., EudraVigilance, PMDA, or clinical trial safety feeds) requires zero changes to `raxtik-etl`:
+You can run analytical SQL queries directly against datasets hosted on Hugging Face Hub over HTTPS without downloading full archives to disk. DuckDB's built-in `httpfs` extension fetches only the metadata and column pages required via HTTP Range requests.
 
-1. Implement `raxtik_etl.sources.protocol.SourceAdapter`:
+### Option A: Remote DuckDB `ATTACH` (Single File URL, Full Star-Schema & Views)
+Points to **one single database file** containing all 7 fact tables (`demo`, `drug`, `reac`, `outc`, `indi`, `ther`, `rpsr`), the precomputed `cases` view, and all 16 reference codelists (`_code_*`):
+
 ```python
-from raxtik_etl.sources.protocol import SourceAdapter, SourceArtifact, SourceLoadResult
 import duckdb
 
+con = duckdb.connect()
+# httpfs is DuckDB's native C++ extension (no pip install required)
+con.execute("INSTALL httpfs; LOAD httpfs;")
 
-class MyCustomSourceAdapter:
-    source_name: str = "my_pv_source"
+# 1 single URL attaches the entire quarterly database
+db_url = "https://huggingface.co/datasets/raxtik-org/faers-safety-database/resolve/main/bronze/2024/faers_2024Q1.duckdb"
+con.execute(f"ATTACH '{db_url}' AS faers (READ_ONLY);")
 
-    def extract_and_load(
-        self, con: duckdb.DuckDBPyConnection, artifact: SourceArtifact
-    ) -> SourceLoadResult:
-        # 1. Extract raw files from artifact.path
-        # 2. Project raw records into canonical staging tables:
-        #    demo, drug, reac, outc, indi, ther, rpsr
-        # 3. Return SourceLoadResult with row counts and provenance metadata
-        ...
+# Clean standard SQL joins across tables inside the attached database
+con.execute("""
+    SELECT
+        d.reported_drug_name,
+        COUNT(*) AS report_count
+    FROM faers.drug d
+    JOIN faers.reac r
+      ON d.primary_id = r.primary_id
+    WHERE d.role_code = 'PS'
+      AND r.reported_reaction_term = 'Myocardial infarction'
+    GROUP BY d.reported_drug_name
+    ORDER BY report_count DESC
+    LIMIT 5;
+""").show()
 ```
+> [!NOTE]
+> *Initial `ATTACH` takes ~10s as DuckDB reads the remote database catalog, block manager, and schema headers over HTTP. Once attached, subsequent queries reuse the connection without re-attaching.*
 
-2. Register the entry point in your package's `pyproject.toml`:
-```toml
-[project.entry-points."raxtik_etl.sources"]
-my_pv_source = "my_package.adapter:MyCustomSourceAdapter"
-```
+### Option B: Remote Parquet Scanning (Fast Columnar Range Requests)
+Directly queries specific columnar Parquet files, skipping unqueried columns entirely:
 
-3. `raxtik-etl` will automatically discover and load the adapter:
-```bash
-raxtik-etl build --source my_pv_source --data-period 2024Q1 --zip-path /path/to/archive.zip
+```python
+import duckdb
+
+con = duckdb.connect()
+con.execute("INSTALL httpfs; LOAD httpfs;")
+
+con.execute("""
+    SELECT
+        d.reported_drug_name,
+        COUNT(*) AS report_count
+    FROM 'https://huggingface.co/datasets/raxtik-org/faers-safety-database/resolve/main/bronze/2024/faers_2024Q1.parquet/drug.parquet' d
+    JOIN 'https://huggingface.co/datasets/raxtik-org/faers-safety-database/resolve/main/bronze/2024/faers_2024Q1.parquet/reac.parquet' r
+      ON d.primary_id = r.primary_id
+    WHERE d.role_code = 'PS'
+      AND r.reported_reaction_term = 'Myocardial infarction'
+    GROUP BY d.reported_drug_name
+    ORDER BY report_count DESC
+    LIMIT 5;
+""").show()
 ```
 
 ---
 
-## 🧪 Testing & Code Quality
+## 🛡️ Data Quality & Cross-Quarter Case Updates
 
-Run tests across the canonical engine:
+In post-marketing pharmacovigilance surveillance, pharmaceutical manufacturers frequently submit follow-up reports updating therapy durations, additional reactions, or new clinical indications for cases originally reported in previous quarters.
 
-```bash
-# Run pytest test suite (25 unit and audit tests)
-pytest tests/ -v
-
-# Run linting and formatting
-ruff check .
-ruff format .
-```
+When FDA releases quarterly ASCII snapshots, child tables (`drug`, `reac`, `indi`, `ther`) occasionally contain update records referencing a `primary_id` from an earlier quarter without re-emitting the unchanged demographic row:
+- In isolated single-quarter snapshots, this manifests as referential integrity warnings (< 0.0003% of rows, e.g., 5 orphan rows in 2012Q1 and 2026Q3).
+- Rather than silently dropping these clinically valuable update records, `raxtik-etl` retains them and transparently logs referential warnings during packaging.
+- Multi-quarter cohort consolidation (`raxtik-etl consolidate`) reconciles multi-version reports into unified case records.
 
 ---
 
 ## 📚 Documentation & Guides
 
 - [Canonical Data Model Specification](docs/schema/canonical_data_model.md): Unified star-schema facts, authoritative deduplicated view, and reference dimensions.
+- [CLI Reference Guide](docs/cli_reference.md): Complete guide for `build`, `download`, `upload`, `inspect`, `consolidate`, and `sources`.
+- [Quickstart Guide](docs/quickstart.md): Step-by-step tutorial for the Python SDK and command line.
+- [Architecture & Design](docs/architecture.md): Decoupled plugin architecture and extensible adapter protocol.
 - [Coded Values & Code-List History Reference](docs/schema/code_list_history.md): Official FDA CDER & ICH E2B(R2/R3) codelists across all eras.
-- [2004Q1 Dataset Integration & Usage Guide](docs/guides/2004q1_usage_guide.md): Downstream synthetic generation recipes and data consumption.
-- [FDA FAERS Official Data Dictionary](docs/fda_faers_official_data_dictionary.md): Field references across S1, S2, and S3 eras.
-- [Historical Schema Evolution Audit](docs/schema/historical_schema_audit.md): Longitudinal schema analysis from 2004Q1 to 2026Q2.
+- [Contributing Guide](CONTRIBUTING.md): Instructions for setting up development environments and submitting pull requests.
 
 ---
 
 ## 📄 License
 
 Licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE)**.
+Raw FDA data is in the public domain (US Government Work, 17 U.S.C. § 105). Derived packaged datasets are distributed under the [Open Data Commons Attribution License (ODC-By 1.0)](https://opendatacommons.org/licenses/by/1-0/).

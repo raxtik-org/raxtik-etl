@@ -47,6 +47,10 @@ def _parallel_range_download(
     bar_desc = desc or f"Downloading {target_path.name}"
     lock = threading.Lock()
 
+    # Clean up any leftover part files from prior interrupted attempts
+    for p in tmp_path.parent.glob(f"{tmp_path.name}.part*"):
+        p.unlink(missing_ok=True)
+
     with tqdm(
         desc=bar_desc,
         total=total_size,
@@ -58,17 +62,6 @@ def _parallel_range_download(
         def fetch_range_part(part_idx: int, start: int, end: int) -> None:
             part_path = tmp_path.with_name(f"{tmp_path.name}.part{part_idx}")
             expected_bytes = end - start + 1
-            downloaded_bytes = 0
-
-            if part_path.exists():
-                downloaded_bytes = part_path.stat().st_size
-                if downloaded_bytes == expected_bytes:
-                    with lock:
-                        bar.update(downloaded_bytes)
-                    return
-                if downloaded_bytes > expected_bytes:
-                    part_path.unlink(missing_ok=True)
-                    downloaded_bytes = 0
 
             # Dedicated thread session prevents server cookie-based connection throttling
             worker_session = requests.Session()
@@ -78,10 +71,9 @@ def _parallel_range_download(
             try:
                 while retries <= max_retries:
                     try:
-                        curr_start = start + downloaded_bytes
                         headers = {
                             "Accept-Encoding": "identity",
-                            "Range": f"bytes={curr_start}-{end}",
+                            "Range": f"bytes={start}-{end}",
                         }
                         read_timeout = (min(15, timeout), min(25, timeout))
                         resp = worker_session.get(
@@ -89,20 +81,31 @@ def _parallel_range_download(
                         )
                         resp.raise_for_status()
 
-                        mode = "ab" if downloaded_bytes > 0 else "wb"
-                        with open(part_path, mode) as f:
+                        # Verify server returned 206 Partial Content
+                        if resp.status_code != 206:
+                            raise requests.RequestException(
+                                f"Expected 206 Partial Content but got {resp.status_code}"
+                            )
+
+                        received = 0
+                        with open(part_path, "wb") as f:
                             for chunk in resp.iter_content(chunk_size=128 * 1024):
                                 if chunk:
                                     f.write(chunk)
                                     chunk_size = len(chunk)
-                                    downloaded_bytes += chunk_size
+                                    received += chunk_size
                                     with lock:
                                         bar.update(chunk_size)
 
-                        if downloaded_bytes >= expected_bytes:
+                        if received == expected_bytes:
                             return
+
+                        # Chunk incomplete, rollback progress and retry
+                        with lock:
+                            bar.update(-received)
+                        part_path.unlink(missing_ok=True)
                         raise requests.RequestException(
-                            f"Part {part_idx} incomplete: {downloaded_bytes}/{expected_bytes} bytes"
+                            f"Part {part_idx} incomplete: {received}/{expected_bytes} bytes"
                         )
 
                     except (
@@ -118,18 +121,24 @@ def _parallel_range_download(
             finally:
                 worker_session.close()
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(ranges)) as executor:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(ranges))
+        try:
             futures = [
                 executor.submit(fetch_range_part, idx, start, end) for idx, start, end in ranges
             ]
             concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_EXCEPTION)
             for f in futures:
                 f.result()
+        finally:
+            executor.shutdown(wait=True)
 
     # Reassemble parts sequentially into tmp_path
     with open(tmp_path, "wb") as outfile:
-        for idx, _, _ in ranges:
+        for idx, start, end in ranges:
             part_path = tmp_path.with_name(f"{tmp_path.name}.part{idx}")
+            expected = end - start + 1
+            if not part_path.exists() or part_path.stat().st_size != expected:
+                raise IOError(f"Part {idx} missing or corrupted during assembly")
             with open(part_path, "rb") as infile:
                 while True:
                     buf = infile.read(1024 * 1024)
@@ -138,11 +147,17 @@ def _parallel_range_download(
                     outfile.write(buf)
             part_path.unlink(missing_ok=True)
 
-    if target_path.suffix.lower() == ".zip" and not zipfile.is_zipfile(tmp_path):
-        tmp_path.unlink(missing_ok=True)
-        raise ValueError(
-            f"Downloaded archive '{tmp_path.name}' is corrupted or incomplete and not a valid zip file."
-        )
+    if target_path.suffix.lower() == ".zip":
+        try:
+            with zipfile.ZipFile(tmp_path, "r") as zf:
+                bad_entry = zf.testzip()
+                if bad_entry is not None:
+                    raise zipfile.BadZipFile(f"CRC/deflate verification failed on '{bad_entry}'")
+        except Exception as exc:
+            tmp_path.unlink(missing_ok=True)
+            raise ValueError(
+                f"Downloaded archive '{tmp_path.name}' failed full zip integrity verification: {exc}"
+            )
 
     tmp_path.replace(target_path)
 

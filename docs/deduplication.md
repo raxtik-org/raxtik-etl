@@ -20,7 +20,7 @@ In pharmacovigilance, patients and clinical reports evolve over time. An adverse
            TRY_CAST(primary_id AS BIGINT) DESC
    ) AS _rnk
    ```
-3. **Longitudinal Case Lineage (`case_lineage`)**:
+3. **Multi-Version Case Lineage (`case_lineage`)**:
    Tracks each unique case over time:
    - `first_release` vs `latest_release`
    - `first_fda_date` vs `latest_fda_date`

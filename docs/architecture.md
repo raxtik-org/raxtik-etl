@@ -75,7 +75,7 @@ class CustomSourceAdapter(SourceAdapter):
         ...
 
     def get_case_lineage_sql(self) -> str:
-        # Longitudinal submission history tracking
+        # Multi-version submission history tracking
         ...
 
     def get_summary_views_sql(self) -> Dict[str, str]:
@@ -109,6 +109,80 @@ When a user calls `Dataset(release="2004Q1", source="faers")`, the engine automa
 - **Authoritative Case View (`cases`)**: Evaluates `case_id` across multi-version submissions, selecting the latest authoritative version based on version numbers and report dates (`canonical_case_version`, `fda_date`) and pre-computing key safety flags (`has_serious_outcome`, `is_death`, `is_expedited`).
 - **16 Pre-Materialized Reference Dimensions (`_code_*`)**: Embedded codelist dimensions conforming to FDA CDER and ICH E2B(R2)/(R3) standards, allowing zero-dependency analytical joins in DuckDB and BI tools.
 - **Zero-Redundancy Canonical Taxonomy**: Enforces a single authoritative name per attribute, eliminating legacy raw CSV duplicate aliases in favor of formal provenance classifications (`TransformationCategory.B_RENAMED_ALIAS`) and standard human-readable labels (`*_label`).
+
+```mermaid
+erDiagram
+    demo ||--o{ drug : "primary_id"
+    demo ||--o{ reac : "primary_id"
+    demo ||--o{ outc : "primary_id"
+    demo ||--o{ rpsr : "primary_id"
+    drug ||--o{ indi : "primary_id, drug_seq"
+    drug ||--o{ ther : "primary_id, drug_seq"
+
+    demo {
+        BIGINT primary_id PK "Unique submission report ID"
+        BIGINT case_id "Unique patient case identifier"
+        INTEGER case_version "Report version number"
+        VARCHAR event_country "Country where reaction occurred"
+        VARCHAR reporter_country_code "ISO 3166-1 alpha-2"
+        DATE fda_date "Receipt date at FDA"
+        VARCHAR age_group_code "ICH life stage classification"
+        DOUBLE standard_age_years "Normalized age in decimal years"
+        VARCHAR standard_sex_label "Male / Female / Unknown"
+        DOUBLE standard_weight_kg "Normalized patient weight in kg"
+        VARCHAR reporter_occupation_label "Physician, Pharmacist, Consumer..."
+        VARCHAR report_type_label "Expedited 15-day, Periodic, Direct..."
+    }
+
+    drug {
+        BIGINT primary_id FK "References demo.primary_id"
+        INTEGER drug_seq PK "Unique exposure index per case"
+        VARCHAR role_code "Role: PS, SS, C, I"
+        VARCHAR standard_role_label "Primary Suspect, Concomitant..."
+        VARCHAR reported_drug_name "Reported medicinal trade/brand name"
+        VARCHAR active_ingredient "Normalized generic active substance"
+        VARCHAR route "Administration route (Oral, IV...)"
+        VARCHAR dose_form "Dosage formulation (Tablet, Solution...)"
+        DOUBLE cumulative_dose "Normalized cumulative amount"
+        VARCHAR cumulative_dose_unit_label "Metric dose unit (mg, mL...)"
+    }
+
+    reac {
+        BIGINT primary_id FK "References demo.primary_id"
+        VARCHAR reported_reaction_term PK "MedDRA Preferred Term"
+        BIGINT reaction_seq "Reaction sequence ordinal"
+        VARCHAR drug_reaction_action "Action taken with drug"
+    }
+
+    outc {
+        BIGINT primary_id FK "References demo.primary_id"
+        VARCHAR outc_code PK "Seriousness criterion: DE, HO, LT, DS, CA, RI, OT"
+        VARCHAR standard_outc_label "Death, Hospitalization, Life-threatening..."
+        BOOLEAN is_death "Flag for fatal outcome (DE)"
+        BOOLEAN is_serious "Flag for serious adverse event"
+    }
+
+    indi {
+        BIGINT primary_id FK "References drug.primary_id"
+        INTEGER indi_drug_seq FK "References drug.drug_seq"
+        VARCHAR indi_pt PK "MedDRA Preferred Term for clinical indication"
+        VARCHAR reported_indication "Reported condition / disease treated"
+    }
+
+    ther {
+        BIGINT primary_id FK "References drug.primary_id"
+        INTEGER dsg_drug_seq FK "References drug.drug_seq"
+        DATE start_date "Therapy initiation date"
+        DATE end_date "Therapy cessation date"
+        DOUBLE duration_days "Standardized duration in days"
+    }
+
+    rpsr {
+        BIGINT primary_id FK "References demo.primary_id"
+        VARCHAR rpsr_code PK "Report source classification code"
+        VARCHAR standard_rpsr_label "Health Professional, Study, Consumer..."
+    }
+```
 
 👉 **Full Schema Reference**: See the **[Canonical Data Model Specification](schema/canonical_data_model.md)** and **[Coded Values Reference](schema/code_list_history.md)** for exhaustive column definitions, primary/foreign keys, and codelist mappings.
 

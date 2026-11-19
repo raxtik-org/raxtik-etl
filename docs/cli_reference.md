@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `raxtik-etl` CLI offers tools for compiling quarterly archives, performing longitudinal deduplication, and distributing packages via Hugging Face Hub.
+The `raxtik-etl` CLI offers tools for compiling quarterly archives, performing cross-quarter case deduplication, inspecting schema data quality, and managing packages.
 
 ---
 
@@ -8,105 +8,148 @@ The `raxtik-etl` CLI offers tools for compiling quarterly archives, performing l
 
 | Command | Description |
 |---|---|
-| [`build-package`](#build-package) | Compiles a standalone DuckDB and Parquet package for a single quarterly release. |
-| [`batch-build`](#batch-build) | Batch compiles packages for a continuous range of periods. |
-| [`consolidate`](#consolidate) | Executes cross-period case deduplication and consolidates packages into a unified dataset. |
-| [`inspect-package`](#inspect-package) | Displays metadata and data quality report for a single quarterly package. |
-| [`inspect-consolidation`](#inspect-consolidation) | Displays reconciliation metrics for a consolidated multi-period package. |
-| [`hf-download`](#hf-download) | Publicly streams and downloads compiled packages from Hugging Face Hub (zero auth). |
-| [`hf-upload`](#hf-upload) | Uploads compiled DuckDB and Parquet packages to Hugging Face Hub (requires token). |
+| [`build`](#build) | Unified compilation command for single quarters or ranges, with automated downloading, packaging, and optional Hugging Face upload. |
+| [`download`](#download) | Streams and downloads compiled packages from Hugging Face Hub (zero auth required). |
+| [`upload`](#upload) | Uploads compiled DuckDB and Parquet packages to Hugging Face Hub (maintainers / custom repos). |
+| [`inspect`](#inspect) | Displays metadata, schema signatures, and data quality indicators for packages or consolidated databases. |
+| [`consolidate`](#consolidate) | Executes cross-quarter case deduplication and consolidates quarterly packages into a unified dataset. |
+| [`sources`](#sources) | Lists registered source connector plugins discovered via Python entry points (`raxtik_etl.sources`). |
 
 ---
 
 ## Detailed Command Specifications
 
-### `build-package`
+### `build`
+
+Compiles raw pharmacovigilance archives into standalone DuckDB databases and ZSTD-compressed Parquet directory shards. Handles both single quarters (via `-d`) and multi-quarter ranges (via `--start` and `--end`).
 
 ```text
-Usage: raxtik-etl build-package [OPTIONS]
+Usage: raxtik-etl build [OPTIONS]
 
 Options:
-  -s, --source      <str>   Source connector name [default: faers]
-  -d, --data-period <str>   Quarterly data period identifier (e.g. 2004Q1) [default: 2004Q1]
-  -z, --zip-path    <path>  Path to source archive/zip file
-  -o, --output-dir  <path>  Destination package directory [default: data/packages]
-  -f, --format      <str>   Package format: 'both', 'duckdb', or 'parquet' [default: both]
+  -d, --data-period     <str>   Single quarter identifier (e.g. 2004Q1).
+  --start               <str>   Starting quarter for range build (e.g. 2004Q1).
+  --end                 <str>   Ending quarter for range build (e.g. 2026Q3).
+  -s, --source          <str>   Source connector plugin [default: faers].
+  -z, --zip-path        <path>  Path to explicit source archive (single quarter only).
+  -o, --output-dir      <path>  Output package directory [default: ~/.cache/raxtik/packages].
+  -f, --format          <str>   Package format: 'both', 'duckdb', or 'parquet' [default: both].
+  --delete-ascii / --no-delete  Whether to delete extracted ASCII files after build [default: True].
+  --upload / --no-upload        Upload completed packages to Hugging Face Hub [default: False].
+  --clean-local                 Delete local package artifacts after upload [default: False].
+  --batch-size-gb       <float> In-flight staging buffer threshold before upload flushing [default: 2.5].
+  --repo-id             <str>   Hugging Face dataset repository ID [default: raxtik-org/faers-safety-database].
+  --tag                 <str>   Git tag or revision for upload [default: v0.1.0.dev1].
+  -t, --token           <str>   Hugging Face API token (defaults to HF_TOKEN env var).
+  --help                        Show help and exit.
+```
+
+**Examples:**
+```bash
+# Build a single quarter
+raxtik-etl build -d 2004Q1
+
+# Batch build a range with upload and local disk cleanup (maintainers)
+raxtik-etl build \
+    --start 2004Q1 \
+    --end 2026Q3 \
+    --upload \
+    --clean-local \
+    --batch-size-gb 2.5 \
+    --tag v0.1.0.dev1
+```
+
+---
+
+### `download`
+
+Downloads compiled DuckDB and Parquet packages from Hugging Face Hub directly into local cache.
+
+```text
+Usage: raxtik-etl download [OPTIONS]
+
+Options:
+  -d, --data-period, -n, --name <str>   Data period (e.g. 2004Q1) [required].
+  -s, --source                  <str>   Source connector [default: faers].
+  --repo-id                     <str>   Hugging Face dataset repo [default: raxtik-org/faers-safety-database].
+  --dest-dir                    <path>  Destination folder [default: ~/.cache/raxtik/packages].
+  -f, --force                           Force re-download even if already present.
+  --help                                Show help and exit.
+```
+
+**Example:**
+```bash
+raxtik-etl download -d 2004Q1
+```
+
+---
+
+### `upload`
+
+Uploads locally compiled quarterly packages to Hugging Face Hub under the structured bronze directory hierarchy (`bronze/<YEAR>/`).
+
+> [!NOTE]
+> Standard users and researchers do not need this command. The official packages are already hosted at [raxtik-org/faers-safety-database](https://huggingface.co/datasets/raxtik-org/faers-safety-database). Use `upload` only if you maintain a custom dataset build or fork.
+
+```text
+Usage: raxtik-etl upload [OPTIONS]
+
+Options:
+  -d, --data-period        <str>   Single quarter (e.g. 2004Q1) or range (e.g. 2004Q1..2006Q4).
+  --start                  <str>   Starting quarter for batch upload.
+  --end                    <str>   Ending quarter for batch upload.
+  -s, --source             <str>   Source connector [default: faers].
+  -p, --package-dir        <path>  Directory containing compiled packages [default: ~/.cache/raxtik/packages].
+  --repo-id                <str>   Hugging Face dataset repository [default: raxtik-org/faers-safety-database].
+  -t, --token              <str>   Hugging Face write token (defaults to HF_TOKEN env var).
+  --tag                    <str>   Release tag to associate with upload.
+  --clean-local                    Remove local files after successful upload.
+  --parquet / --no-parquet         Upload Parquet table shards alongside DuckDB [default: True].
+  --help                           Show help and exit.
+```
+
+---
+
+### `inspect`
+
+Inspects a quarterly package or consolidated dataset, printing metadata, canonical record counts, and data quality indicators.
+
+```text
+Usage: raxtik-etl inspect [OPTIONS]
+
+Options:
+  -d, --data-period <str>   Quarterly data period identifier (e.g. 2004Q1).
+  -s, --source      <str>   Source connector [default: faers].
+  -p, --package-dir <path>  Directory containing package files.
+  --db-path         <path>  Direct path to DuckDB database file.
   --help                    Show help and exit.
 ```
 
-### `batch-build`
-
-```text
-Usage: raxtik-etl batch-build [OPTIONS]
-
-Options:
-  --start          <str>   Starting data period (e.g. 2004Q1) [default: 2004Q1]
-  --end            <str>   Ending data period (e.g. 2006Q4) [default: 2006Q4]
-  -s, --source     <str>   Source connector name [default: faers]
-  -o, --output-dir <path>  Destination directory [default: data/packages]
-  --help                   Show help and exit.
-```
+---
 
 ### `consolidate`
+
+Executes cross-quarter case deduplication and reconciles multi-version follow-up reports across multiple quarters into a unified consolidated database.
 
 ```text
 Usage: raxtik-etl consolidate [OPTIONS]
 
 Options:
-  --start          <str>   Starting period (e.g. 2004Q1) [default: 2004Q1]
-  --end            <str>   Ending period (e.g. 2006Q4) [default: 2006Q4]
-  -p, --package-dir<path>  Directory containing packages [default: data/packages]
-  -n, --output-name<str>   Output database name [default: faers_2004_2006_consolidated]
-  -o, --output-dir <path>  Destination directory [default: data/packages]
+  --start          <str>   Starting period (e.g. 2004Q1).
+  --end            <str>   Ending period (e.g. 2006Q4).
+  -s, --source     <str>   Source connector name [default: faers].
+  -p, --package-dir<path>  Directory containing input packages.
+  -n, --output-name<str>   Output database base name [default: faers_2004_2006_consolidated].
+  -o, --output-dir <path>  Destination directory [default: ~/.cache/raxtik/packages].
   --help                   Show help and exit.
 ```
 
-### `inspect-package`
+---
+
+### `sources`
+
+Lists all installed and discovered pharmacovigilance source adapters.
 
 ```text
-Usage: raxtik-etl inspect-package [OPTIONS]
-
-Options:
-  -d, --data-period <str>   Quarterly data period identifier [default: 2004Q1]
-  -p, --package-dir <path>  Directory containing package files
-  --help                    Show help and exit.
-```
-
-### `inspect-consolidation`
-
-```text
-Usage: raxtik-etl inspect-consolidation [OPTIONS]
-
-Options:
-  -d, --db-path    <path>  Path to consolidated DuckDB package [default: data/packages/faers_2004_2006_consolidated.duckdb]
-  --help                   Show help and exit.
-```
-
-### `hf-download`
-
-```text
-Usage: raxtik-etl hf-download [OPTIONS]
-
-Options:
-  -d, --data-period, -n, --name <str>   Data period or package name (e.g. 2004Q1) [default: 2004Q1]
-  --repo-id                     <str>   Hugging Face dataset repo [default: raxtik-org/faers-safety-database]
-  --dest-dir                    <path>  Destination folder [default: data/packages]
-  -f, --force                           Overwrite existing local file
-  --help                                Show help and exit.
-```
-
-### `hf-upload`
-
-```text
-Usage: raxtik-etl hf-upload [OPTIONS]
-
-Options:
-  -d, --data-period        <str>   Data period (e.g. 2004Q1) or range (e.g. 2007Q1..2026Q1)
-  --start                  <str>   Starting quarter for batch upload
-  --end                    <str>   Ending quarter for batch upload
-  --repo-id                <str>   Hugging Face dataset repo [default: raxtik-org/faers-safety-database]
-  -p, --package-dir        <path>  Directory containing packages [default: data/packages]
-  -t, --token              <str>   Hugging Face write token (defaults to HF_TOKEN env var)
-  --parquet/--no-parquet           Whether to include Parquet shards [default: True]
-  --help                           Show help and exit.
+Usage: raxtik-etl sources [OPTIONS]
 ```

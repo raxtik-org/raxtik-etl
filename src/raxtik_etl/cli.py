@@ -358,7 +358,7 @@ def _flush_hf_batch(
     source: str,
     token: Optional[str],
     clean_local: bool,
-) -> None:
+) -> float:
     """Uploads accumulated package batch to Hugging Face Hub in a single bulk commit."""
     import shutil
     import time
@@ -366,7 +366,7 @@ def _flush_hf_batch(
     from raxtik_etl.distribution.huggingface import upload_package_to_hf
 
     if not batch_quarters:
-        return
+        return 0.0
 
     t_flush_start = time.perf_counter()
     upload_package_to_hf(
@@ -391,6 +391,7 @@ def _flush_hf_batch(
         console.print(
             f"[dim]✓ Cleaned local package files for {batch_quarters[0]}..{batch_quarters[-1]} to free disk space.[/dim]"
         )
+    return t_flush
 
 
 @app.command("batch-build", hidden=True)
@@ -467,6 +468,11 @@ def batch_build_cmd(
         f"[bold cyan]Building {len(quarters)} quarterly packages ({quarters[0]} to {quarters[-1]})...[/bold cyan]"
     )
 
+    t_batch_start = time.perf_counter()
+    total_dl_sec = 0.0
+    total_build_sec = 0.0
+    total_upload_sec = 0.0
+
     built_count = 0
     target_pkg_dir = output_dir or get_default_package_dir()
     batch_quarters: List[str] = []
@@ -474,9 +480,9 @@ def batch_build_cmd(
     max_batch_bytes = int(batch_size_gb * 1024 * 1024 * 1024)
 
     def _flush():
-        nonlocal batch_quarters, batch_bytes
+        nonlocal batch_quarters, batch_bytes, total_upload_sec
         if upload and batch_quarters:
-            _flush_hf_batch(
+            flush_sec = _flush_hf_batch(
                 batch_quarters=batch_quarters,
                 batch_bytes=batch_bytes,
                 target_pkg_dir=target_pkg_dir,
@@ -485,6 +491,7 @@ def batch_build_cmd(
                 token=token,
                 clean_local=clean_local,
             )
+            total_upload_sec += flush_sec
         batch_quarters = []
         batch_bytes = 0
 
@@ -507,6 +514,7 @@ def batch_build_cmd(
         archive_file, t_dl = _resolve_quarter_archive(adapter, q, source, force)
         if not archive_file:
             continue
+        total_dl_sec += t_dl
 
         t_b0 = time.perf_counter()
         build_quarterly_package(
@@ -519,6 +527,7 @@ def batch_build_cmd(
             delete_ascii=delete_ascii,
         )
         t_build = time.perf_counter() - t_b0
+        total_build_sec += t_build
         built_count += 1
 
         batch_quarters.append(q)
@@ -544,6 +553,38 @@ def batch_build_cmd(
         except Exception as e:
             console.print(f"[bold yellow]Warning: could not create tag '{tag}': {e}[/bold yellow]")
 
+    total_wall_clock = time.perf_counter() - t_batch_start
+
+    from rich.table import Table
+
+    summary_table = Table(title=f"Batch Build & Upload Summary ({quarters[0]}..{quarters[-1]})")
+    summary_table.add_column("Stage / Metric", style="cyan", no_wrap=True)
+    summary_table.add_column("Value", style="magenta")
+
+    summary_table.add_row("Total Quarters Processed", f"{built_count} / {len(quarters)}")
+    summary_table.add_row(
+        "Total Wall-Clock Time",
+        f"{total_wall_clock:.1f}s ({total_wall_clock / 60:.2f} min)",
+    )
+    summary_table.add_row(
+        "Cumulative Download Time",
+        f"{total_dl_sec:.1f}s ({total_dl_sec / 60:.2f} min)",
+    )
+    summary_table.add_row(
+        "Cumulative Transformation Time",
+        f"{total_build_sec:.1f}s ({total_build_sec / 60:.2f} min)",
+    )
+    if upload:
+        summary_table.add_row(
+            "Cumulative Upload Time",
+            f"{total_upload_sec:.1f}s ({total_upload_sec / 60:.2f} min)",
+        )
+        summary_table.add_row("Target HF Repository", repo_id)
+        if tag:
+            summary_table.add_row("Release Tag", tag)
+    summary_table.add_row("Peak Memory RSS", f"{_get_process_rss_mb():.1f} MB")
+
+    console.print(summary_table)
     console.print(
         f"[bold green]✓ Successfully processed all {len(quarters)} packages.[/bold green]"
     )

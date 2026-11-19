@@ -11,7 +11,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import List, Optional, Sequence, Union
+from typing import Any, List, Optional, Sequence, Union
 
 import requests
 from rich.console import Console
@@ -66,11 +66,7 @@ def resolve_hf_revision(
     # Try version tag candidates (e.g. '0.1.0.dev', 'v0.1.0.dev0', 'v0.1.0')
     from raxtik_etl import __version__
 
-    candidates = [__version__, f"v{__version__}"]
-    if ".dev" in __version__:
-        clean_dev = __version__.split(".dev")[0] + ".dev"
-        candidates.insert(0, clean_dev)
-        candidates.insert(1, f"v{clean_dev}")
+    candidates = [f"v{__version__}", __version__]
 
     for tag_candidate in candidates:
         try:
@@ -283,6 +279,11 @@ def download_package_from_hf(
                 console.print(
                     f"[bold green]✓ Verified SHA-256 integrity against Hugging Face:[/bold green] {actual_sha[:12]}"
                 )
+
+            if downloaded_file != dest_file:
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                downloaded_file.replace(dest_file)
+                downloaded_file = dest_file
     except ImportError:
         # Fallback to direct HTTP download via requests with atomic .part staging
         response = None
@@ -367,6 +368,21 @@ def download_package_from_hf(
     return downloaded_file if downloaded_file else dest_file
 
 
+def _resolve_hf_token(explicit_token: Optional[str] = None) -> Optional[str]:
+    """Resolves Hugging Face write token from parameter, env var, or .token.env file."""
+    if explicit_token:
+        return explicit_token
+    env_tok = os.environ.get("HF_TOKEN")
+    if env_tok:
+        return env_tok
+    for p in (Path(".token.env"), Path.cwd() / ".token.env", Path.home() / ".token.env"):
+        if p.is_file():
+            content = p.read_text().strip()
+            if content:
+                return content
+    return None
+
+
 def upload_package_to_hf(
     data_period_or_name: Union[str, List[str]],
     package_dir: Optional[Path | str] = None,
@@ -411,11 +427,11 @@ def upload_package_to_hf(
             "Uploading requires 'huggingface_hub'. Please install it using: pip install 'raxtik-etl[dev]'"
         )
 
-    auth_token = token or os.environ.get("HF_TOKEN")
+    auth_token = _resolve_hf_token(token)
     if not auth_token:
         raise ValueError(
             "Hugging Face write token is required to upload packages. "
-            "Please pass token=... or set the HF_TOKEN environment variable."
+            "Please pass token=..., set HF_TOKEN environment variable, or provide a .token.env file."
         )
 
     pkg_dir = Path(package_dir) if package_dir else get_default_package_dir()
@@ -564,10 +580,10 @@ def tag_hf_dataset(
             "Tagging requires 'huggingface_hub'. Please install it using: pip install 'raxtik-etl[dev]'"
         )
 
-    auth_token = token or os.environ.get("HF_TOKEN")
+    auth_token = _resolve_hf_token(token)
     if not auth_token:
         raise ValueError(
-            "HF_TOKEN is required to tag the dataset. Please pass token=... or set the HF_TOKEN environment variable."
+            "HF_TOKEN is required to tag the dataset. Please pass token=..., set HF_TOKEN environment variable, or provide a .token.env file."
         )
     api = HfApi(token=auth_token)
     try:
@@ -581,3 +597,76 @@ def tag_hf_dataset(
         tag_message=f"Release {tag}",
     )
     console.print(f"[bold green]✓ Tagged Hugging Face repository {repo_id} at '{tag}'[/bold green]")
+
+
+def connect_remote_hf_duckdb(
+    repo_id: str,
+    source: str,
+    data_period: str,
+    revision: Optional[str] = None,
+    tier: str = "bronze",
+    max_retries: int = 3,
+    backoff: float = 1.0,
+) -> tuple[str, Any]:
+    """Connects to a remote DuckDB package on Hugging Face Hub using httpfs.
+
+    Args:
+        repo_id: Hugging Face dataset repository identifier.
+        source: Source identifier (e.g. 'faers').
+        data_period: Temporal coverage period (e.g. '2004Q1').
+        revision: Optional Hugging Face Git revision or tag.
+        tier: Dataset release tier ('bronze' or 'silver').
+        max_retries: Maximum number of connection retry attempts on rate limits.
+        backoff: Initial backoff delay in seconds.
+
+    Returns:
+        Tuple of (remote_url, duckdb_connection).
+
+    Raises:
+        RuntimeError: If connection fails after max_retries.
+    """
+    import time
+    import warnings
+
+    import duckdb
+
+    resolved_rev = resolve_hf_revision(repo_id=repo_id, revision=revision)
+    year = data_period[:4]
+    remote_url = (
+        f"https://huggingface.co/datasets/{repo_id}/resolve/"
+        f"{resolved_rev}/{tier}/{year}/{source}_{data_period}.duckdb"
+    )
+
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+
+    attached = False
+    last_err = None
+
+    for attempt in range(max_retries):
+        try:
+            con.execute(f"ATTACH '{remote_url}' AS {source} (READ_ONLY);")
+            con.execute(f"USE {source};")
+            attached = True
+            break
+        except Exception as e:
+            last_err = e
+            err_str = str(e).lower()
+            if "429" in err_str or "rate limit" in err_str or "503" in err_str:
+                warnings.warn(
+                    f"Remote connection to Hugging Face encountered rate-limiting or congestion (attempt {attempt + 1}/{max_retries}). "
+                    "Retrying with backoff. For iterative or heavy analytics, consider `remote=False` to download once and query locally.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                time.sleep(backoff)
+                backoff *= 2.0
+            else:
+                raise
+
+    if not attached:
+        raise RuntimeError(
+            f"Failed to attach remote DuckDB package from {remote_url} after {max_retries} attempts: {last_err}"
+        ) from last_err
+
+    return remote_url, con

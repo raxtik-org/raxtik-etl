@@ -39,50 +39,98 @@ with FAERS("2004Q1") as faers:
     print(custom_df)
 ```
 
-### Auto-Downloading from Hugging Face Hub
+### Auto-Downloading & Streaming from Hugging Face Hub
 
-Users don't need to manually build packages; `Dataset.from_hf` streams precompiled packages directly from Hugging Face Hub (zero auth required):
+Users don't need to manually build packages; `FAERS.from_hf` (or `Dataset.from_hf`) streams precompiled packages directly from Hugging Face Hub (zero auth required):
 
 ```python
-from raxtik_etl import Dataset
+from raxtik_etl import FAERS
 
-# Automatically downloads from Hugging Face Hub if missing locally
-with Dataset.from_hf("2004Q1", source="faers") as ds:
-    df = ds.cases(limit=100)
-    print(f"Loaded {len(df)} cases.")
+# 1. Default (Recommended): Downloads once, caches locally, and queries in milliseconds
+with FAERS.from_hf("2024Q1") as faers:
+    faers.print_summary()
+    cases_df = faers.cases(limit=100)
+    print(f"Loaded {len(cases_df)} cases.")
+
+# 2. Zero Local Disk (Remote Streaming): Queries over HTTPS without local downloads
+with FAERS.from_hf("2024Q1", remote=True) as faers:
+    cases_df = faers.cases(limit=100)
+    drugs_df = faers.drugs(limit=100)
+    reactions_df = faers.reactions(limit=100)
 ```
 
-When using the [`raxtik-source-faers`](https://github.com/raxtik-org/raxtik-source-faers) plugin directly:
+### Direct Remote SQL via DuckDB
+
+You can also run ad-hoc SQL directly over remote packages using DuckDB's built-in `httpfs` extension:
 
 ```python
-from raxtik_source_faers import FAERS
+import duckdb
 
-with FAERS.from_hf("2004Q1") as faers:
-    df = faers.cases(limit=100)
-    print(f"Loaded {len(df)} cases.")
+con = duckdb.connect()
+con.execute("INSTALL httpfs; LOAD httpfs;")
+
+# Option A: Attach remote DuckDB file (1 URL for all 7 tables + views)
+db_url = "https://huggingface.co/datasets/raxtik-org/faers-safety-database/resolve/main/bronze/2024/faers_2024Q1.duckdb"
+con.execute(f"ATTACH '{db_url}' AS faers (READ_ONLY);")
+
+con.execute("""
+    SELECT d.reported_drug_name, COUNT(*) AS report_count
+    FROM faers.drug d
+    JOIN faers.reac r ON d.primary_id = r.primary_id
+    WHERE d.role_code = 'PS' AND r.reported_reaction_term = 'Myocardial infarction'
+    GROUP BY d.reported_drug_name ORDER BY report_count DESC LIMIT 5;
+""").show()
 ```
 
 ---
 
 ## 2. Command Line Interface (CLI)
 
-`raxtik-etl` provides a command-line interface:
+`raxtik-etl` provides a unified modern command-line interface:
+
+### Downloading Compiled Packages
+
+```bash
+# Download a compiled package from Hugging Face Hub (zero auth required)
+raxtik-etl download -d 2004Q1
+
+# Download to a custom destination directory
+raxtik-etl download -d 2004Q1 --dest-dir ./my_packages
+```
 
 ### Building Single-Quarter Packages
 
 ```bash
-# Build 2004Q1 from cached archive
-raxtik-etl build-package --data-period 2004Q1
+# Build 2004Q1 from cached or downloaded archive
+raxtik-etl build -d 2004Q1
 
 # Build using an explicit zip archive path
-raxtik-etl build-package --data-period 2004Q2 --zip-path data/raw/archives_cache/2004q2_ascii.zip
+raxtik-etl build -d 2004Q2 --zip-path data/raw/archives_cache/2004q2_ascii.zip
 ```
 
-### Batch Building Packages
+### Batch Building & Distributing Packages
 
 ```bash
-# Build all 12 quarters from 2004Q1 to 2006Q4 in one command
-raxtik-etl batch-build --start 2004Q1 --end 2006Q4
+# Build a continuous range of quarters
+raxtik-etl build --start 2004Q1 --end 2006Q4
+
+# Batch build and upload to Hugging Face with memory batch buffering and auto-cleanup
+export HF_TOKEN="hf_..."
+raxtik-etl build \
+    --start 2004Q1 \
+    --end 2026Q3 \
+    --upload \
+    --clean-local \
+    --batch-size-gb 2.5 \
+    --tag v0.1.0.dev1 \
+    --repo-id raxtik-org/faers-safety-database
+```
+
+### Inspecting Package Metadata & Data Quality
+
+```bash
+# Inspect a compiled quarterly package
+raxtik-etl inspect -d 2004Q1
 ```
 
 ### Cross-Period Case Deduplication & Consolidation
@@ -92,16 +140,12 @@ raxtik-etl batch-build --start 2004Q1 --end 2006Q4
 raxtik-etl consolidate --start 2004Q1 --end 2006Q4 --output-name faers_2004_2006_consolidated
 
 # Inspect the consolidated package metrics
-raxtik-etl inspect-consolidation
+raxtik-etl inspect --db-path data/packages/faers_2004_2006_consolidated.duckdb
 ```
 
 ### Hugging Face Distribution Commands
 
 ```bash
-# Download a compiled package (no auth required)
-raxtik-etl hf-download --data-period 2004Q1
-
-# Upload compiled package to Hugging Face Hub (requires HF_TOKEN)
+# Upload a compiled package to Hugging Face Hub (requires HF_TOKEN)
 export HF_TOKEN="hf_..."
-raxtik-etl hf-upload --data-period 2004Q1 --repo-id raxtik-org/faers-safety-database
-```
+raxtik-etl upload -d 2004Q1 --repo-id raxtik-org/faers-safety-database

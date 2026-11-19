@@ -27,22 +27,22 @@ def check_file_exists_and_non_empty(file_path: Union[Path, str]) -> Path:
     return path
 
 
-def read_first_line(file_path: Union[Path, str], encoding: str = "utf-8") -> str:
+def read_first_line(file_path: Union[Path, str], encoding: str = "utf-8-sig") -> str:
     """Reads and returns the first non-empty line of a text file.
 
     Args:
         file_path: Filesystem path to the file.
-        encoding: Text file encoding (default: utf-8).
+        encoding: Text file encoding (default: utf-8-sig to automatically strip BOM).
 
     Returns:
-        Stripped string containing the first line.
+        Stripped string containing the first line with BOM stripped.
 
     Raises:
         ValueError: If file contains no lines.
     """
     path = Path(file_path)
     with open(path, "r", encoding=encoding, errors="ignore") as f:
-        line = f.readline().strip()
+        line = f.readline().strip().lstrip("\ufeff")
     if not line:
         raise ValueError(f"Source extract file '{path.name}' has no header line.")
     return line
@@ -65,7 +65,11 @@ def parse_delimited_header(header_line: str, delimiter: str = "$") -> Set[str]:
         raise ValueError(
             f"Delimiter '{delimiter}' not found in header line: '{header_line[:60]}...'"
         )
-    columns = {col.strip().lower() for col in header_line.split(delimiter) if col.strip()}
+    columns = {
+        col.strip().lstrip("\ufeff").lower()
+        for col in header_line.split(delimiter)
+        if col.strip().lstrip("\ufeff")
+    }
     if not columns:
         raise ValueError(
             f"No valid column names parsed from header line with delimiter '{delimiter}'."
@@ -75,21 +79,37 @@ def parse_delimited_header(header_line: str, delimiter: str = "$") -> Set[str]:
 
 def check_required_columns(
     available_columns: Collection[str],
-    required_columns: Collection[str],
+    required_columns: Collection[Union[str, Collection[str]]],
     source_name: str = "file",
 ) -> None:
     """Asserts that all required columns are present in available columns.
 
+    Supports alternative column specs using pipe notation (e.g. 'outc_cod|outc_code')
+    or nested collections.
+
     Args:
         available_columns: Collection of detected columns.
-        required_columns: Collection of required columns.
+        required_columns: Collection of required columns (or alternatives).
         source_name: Identifier or filename for error reporting.
 
     Raises:
         ValueError: If one or more required columns are missing.
     """
-    available_lower = {c.lower() for c in available_columns}
-    missing = {c.lower() for c in required_columns} - available_lower
+    available_lower = {c.strip().lstrip("\ufeff").lower() for c in available_columns}
+    missing = set()
+    for col_spec in required_columns:
+        if isinstance(col_spec, (set, tuple, list)):
+            options = {c.strip().lstrip("\ufeff").lower() for c in col_spec}
+        elif isinstance(col_spec, str) and "|" in col_spec:
+            options = {c.strip().lstrip("\ufeff").lower() for c in col_spec.split("|")}
+        elif isinstance(col_spec, str):
+            options = {col_spec.strip().lstrip("\ufeff").lower()}
+        else:
+            continue
+        if not (options & available_lower):
+            label = col_spec if isinstance(col_spec, str) else "|".join(sorted(options))
+            missing.add(label)
+
     if missing:
         raise ValueError(
             f"Corrupted or unexpected schema in '{source_name}': "
