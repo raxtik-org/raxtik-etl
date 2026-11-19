@@ -135,8 +135,8 @@ erDiagram
     }
 
     drug {
-        BIGINT primary_id FK "References demo.primary_id"
-        INTEGER drug_seq PK "Unique exposure index per case"
+        BIGINT primary_id PK,FK "References demo.primary_id (Composite PK Part 1)"
+        INTEGER drug_seq PK "Exposure sequence per report (Composite PK Part 2)"
         VARCHAR role_code "Role: PS, SS, C, I"
         VARCHAR standard_role_label "Primary Suspect, Concomitant..."
         VARCHAR reported_drug_name "Reported medicinal trade/brand name"
@@ -148,38 +148,38 @@ erDiagram
     }
 
     reac {
-        BIGINT primary_id FK "References demo.primary_id"
-        VARCHAR reported_reaction_term PK "MedDRA Preferred Term"
+        BIGINT primary_id PK,FK "References demo.primary_id (Composite PK Part 1)"
+        VARCHAR reported_reaction_term PK "MedDRA Preferred Term (Composite PK Part 2)"
         BIGINT reaction_seq "Reaction sequence ordinal"
         VARCHAR drug_reaction_action "Action taken with drug"
     }
 
     outc {
-        BIGINT primary_id FK "References demo.primary_id"
-        VARCHAR outc_code PK "Seriousness criterion: DE, HO, LT, DS, CA, RI, OT"
+        BIGINT primary_id PK,FK "References demo.primary_id (Composite PK Part 1)"
+        VARCHAR outc_code PK "Seriousness criterion: DE, HO, LT, DS, CA, RI, OT (Composite PK Part 2)"
         VARCHAR standard_outc_label "Death, Hospitalization, Life-threatening..."
         BOOLEAN is_death "Flag for fatal outcome (DE)"
         BOOLEAN is_serious "Flag for serious adverse event"
     }
 
     indi {
-        BIGINT primary_id FK "References drug.primary_id"
-        INTEGER indi_drug_seq FK "References drug.drug_seq"
-        VARCHAR indi_pt PK "MedDRA Preferred Term for clinical indication"
+        BIGINT primary_id PK,FK "Composite PK Part 1 / References drug(primary_id, drug_seq)"
+        INTEGER indi_drug_seq PK,FK "Composite PK Part 2 / References drug(primary_id, drug_seq)"
+        VARCHAR reported_indication_term PK "MedDRA Indication Term (Composite PK Part 3)"
         VARCHAR reported_indication "Reported condition / disease treated"
     }
 
     ther {
-        BIGINT primary_id FK "References drug.primary_id"
-        INTEGER dsg_drug_seq FK "References drug.drug_seq"
+        BIGINT primary_id PK,FK "Composite PK Part 1 / References drug(primary_id, drug_seq)"
+        INTEGER dsg_drug_seq PK,FK "Composite PK Part 2 / References drug(primary_id, drug_seq)"
         DATE start_date "Therapy initiation date"
         DATE end_date "Therapy cessation date"
         DOUBLE duration_days "Standardized duration in days"
     }
 
     rpsr {
-        BIGINT primary_id FK "References demo.primary_id"
-        VARCHAR rpsr_code PK "Report source classification code"
+        BIGINT primary_id PK,FK "References demo.primary_id (Composite PK Part 1)"
+        VARCHAR rpsr_code PK "Report source classification code (Composite PK Part 2)"
         VARCHAR standard_rpsr_label "Health Professional, Study, Consumer..."
     }
 ```

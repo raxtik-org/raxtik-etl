@@ -56,9 +56,9 @@ Every source connector projects extracted submission records into 7 canonical fa
 | :--- | :--- | :--- | :--- | :--- |
 | **`demo`** | Case Submissions & Demographics | `primary_id`, `case_id` | *(Root fact table)* | Demographic data, reporting source details, manufacturer submission tracking, and receipt dates. |
 | **`drug`** | Drug Exposures & Regimens | `primary_id`, `drug_seq` | `primary_id` -> `demo.primary_id` | Reported medicinal products, active ingredients, dosage forms, routes of administration, and suspect roles. |
-| **`reac`** | Adverse Reactions | `primary_id`, `pt` | `primary_id` -> `demo.primary_id` | Adverse event terms coded using MedDRA Preferred Terms (`pt`). |
+| **`reac`** | Adverse Reactions | `primary_id`, `reported_reaction_term` | `primary_id` -> `demo.primary_id` | Adverse event terms coded using MedDRA Preferred Terms (`reported_reaction_term`). |
 | **`outc`** | Clinical Outcomes | `primary_id`, `outc_code` | `primary_id` -> `demo.primary_id` | Seriousness criteria indicating severe clinical consequences (death, hospitalization, disability, etc.). |
-| **`indi`** | Therapy Indications | `primary_id`, `indi_drug_seq`, `indi_pt` | `primary_id`, `indi_drug_seq` -> `drug.drug_seq` | Reported medical conditions and clinical indications for which each drug was prescribed. |
+| **`indi`** | Therapy Indications | `primary_id`, `indi_drug_seq`, `reported_indication_term` | `primary_id`, `indi_drug_seq` -> `drug(primary_id, drug_seq)` | Reported medical conditions and clinical indications for which each drug was prescribed. |
 | **`ther`** | Therapy Timelines | `primary_id`, `dsg_drug_seq` | `primary_id`, `dsg_drug_seq` -> `drug.drug_seq` | Start dates, end dates, and duration durations for drug administration. |
 | **`rpsr`** | Report Sources | `primary_id`, `rpsr_code` | `primary_id` -> `demo.primary_id` | Original source categories contributing to the safety report submission. |
 
