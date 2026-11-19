@@ -221,11 +221,11 @@ class BaseDataset:
             None
         """
         try:
-            pkg_ver = self._con.execute(
+            rows = self._con.execute(
                 "SELECT value FROM _metadata WHERE key = 'package_format_version'"
-            ).fetchone()
-            if pkg_ver:
-                self.package_format_version = pkg_ver[0]
+            ).fetchall()
+            if rows:
+                self.package_format_version = rows[0][0]
             else:
                 self.package_format_version = "1.0.0"
         except Exception:
