@@ -77,7 +77,7 @@ def apply_tier_views(
             WITH bounded AS (
                 SELECT
                     case_id,
-                    list_filter(timeline, x -> x.quarter <= '{as_of}') AS tl
+                    list_filter(timeline, lambda x: x.quarter <= '{as_of}') AS tl
                 FROM _index_state
             )
             SELECT
@@ -215,7 +215,7 @@ def materialize_filtered_package(
                 f"""
                 CREATE TEMP TABLE _winners AS
                 WITH bounded AS (
-                    SELECT list_filter(timeline, x -> x.quarter <= '{as_of}') AS tl
+                    SELECT list_filter(timeline, lambda x: x.quarter <= '{as_of}') AS tl
                     FROM ({state_sql})
                 )
                 SELECT tl[1].primary_id AS winning_primary_id

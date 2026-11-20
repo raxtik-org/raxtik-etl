@@ -198,7 +198,7 @@ def test_incremental_updates_preserve_full_timeline_and_snapshots(tmp_path: Path
     try:
         winner_2005q3 = con.execute(
             f"""
-            SELECT list_filter(timeline, x -> x.quarter <= '2005Q3')[1].primary_id
+            SELECT list_filter(timeline, lambda x: x.quarter <= '2005Q3')[1].primary_id
             FROM ({resolved_sql})
             WHERE case_id = 'C99'
             """
