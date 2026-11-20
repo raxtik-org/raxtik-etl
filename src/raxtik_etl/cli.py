@@ -1074,5 +1074,359 @@ def sources_cmd() -> None:
     console.print(table)
 
 
+index_app = typer.Typer(
+    name="index",
+    help="Build, incrementally update, compact, verify, and publish tier-agnostic derived deduplication indexes.",
+    add_completion=False,
+)
+app.add_typer(index_app, name="index")
+
+
+def _resolve_cli_policy(source: str, shards: int) -> Any:
+    """Resolves ResolutionPolicy from installed source adapter (or canonical default)."""
+    from dataclasses import replace
+
+    from raxtik_etl.indexing.models import ResolutionPolicy
+
+    try:
+        adapter = get_source_adapter(source)
+        policy = (
+            adapter.get_resolution_policy()
+            if hasattr(adapter, "get_resolution_policy")
+            else ResolutionPolicy()
+        )
+    except SourcePluginNotFoundError:
+        policy = ResolutionPolicy()
+    return replace(policy, shard_count=shards)
+
+
+def _find_bronze_package(pkg_dir: Path, source: str, period: str) -> Path:
+    """Locates local Bronze `.duckdb` or `.parquet` package for a given period."""
+    db_path = pkg_dir / f"{source}_{period}.duckdb"
+    if db_path.exists():
+        return db_path
+    pq_path = pkg_dir / f"{source}_{period}.parquet"
+    if pq_path.exists():
+        return pq_path
+    raise FileNotFoundError(
+        f"Bronze package for {source} {period} not found in {pkg_dir} "
+        f"(checked {db_path.name} and {pq_path.name})."
+    )
+
+
+def _discover_local_periods(pkg_dir: Path, source: str) -> List[str]:
+    """Discovers all locally available quarterly periods for `source` in `pkg_dir`."""
+    import re
+
+    pattern = re.compile(rf"^{re.escape(source)}_(\d{{4}}Q[1-4])\.(duckdb|parquet)$", re.IGNORECASE)
+    found = set()
+    if pkg_dir.exists():
+        for entry in pkg_dir.iterdir():
+            m = pattern.match(entry.name)
+            if m:
+                found.add(m.group(1).upper())
+    return sorted(found)
+
+
+@index_app.command("build")
+def index_build_cmd(
+    source: str = typer.Option("faers", "--source", "-s", help="Source identifier (e.g. faers)"),
+    tier: str = typer.Option("silver", "--tier", help="Target index tier (e.g. silver, gold)"),
+    start: Optional[str] = typer.Option(
+        None,
+        "--start",
+        help="Optional start quarter (e.g. 2004Q1). If omitted, indexes all local packages.",
+    ),
+    end: Optional[str] = typer.Option(None, "--end", help="Optional end quarter (e.g. 2026Q3)."),
+    package_dir: Optional[Path] = typer.Option(
+        None, "--package-dir", "-p", help="Directory containing Bronze packages."
+    ),
+    index_dir: Optional[Path] = typer.Option(
+        None,
+        "--index-dir",
+        help="Destination directory for index files (defaults to ~/.cache/raxtik/indexes/<source>/<tier>).",
+    ),
+    shards: int = typer.Option(16, "--shards", help="Number of hash shards (default: 16)."),
+    compact: bool = typer.Option(
+        True,
+        "--compact/--no-compact",
+        help="Compact completed 4-quarter years into annual ledgers.",
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Re-extract existing period ledgers if already present."
+    ),
+) -> None:
+    """Deterministically builds a fresh immutable tier index snapshot from local Bronze packages."""
+    from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
+
+    pkg_dir = package_dir or get_default_package_dir()
+    idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
+    policy = _resolve_cli_policy(source, shards)
+    state = ShardedStateIndex(idx_root, tier=tier, source=source, policy=policy)
+
+    if start and end:
+        periods = parse_quarter_range(start, end)
+    elif start or end:
+        console.print("[bold red]Both --start and --end must be specified together.[/bold red]")
+        raise typer.Exit(code=1)
+    else:
+        periods = _discover_local_periods(pkg_dir, source.lower())
+
+    if not periods:
+        console.print(f"[bold red]No Bronze packages found for '{source}' in {pkg_dir}.[/bold red]")
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[bold cyan]Building {tier} index for {source} ({len(periods)} periods: {periods[0]}..{periods[-1]})...[/bold cyan]"
+    )
+    for period in periods:
+        src_pkg = _find_bronze_package(pkg_dir, source.lower(), period)
+        try:
+            state.ledger.extract_period_ledger(src_pkg, period, overwrite=overwrite)
+            console.print(f"  [dim]Extracted ledger:[/dim] {period}")
+        except FileExistsError:
+            console.print(f"  [dim]Ledger already exists (skipped):[/dim] {period}")
+
+    if compact:
+        compacted = state.ledger.compact_completed_years(remove_quarterly=True)
+        for c in compacted:
+            console.print(f"  [green]Compacted annual ledger:[/green] {c.name}")
+
+    manifest = state.build_from_ledgers()
+    snap = manifest.active_snapshot
+    console.print(
+        Panel(
+            f"Snapshot ID: [bold]{snap.snapshot_id}[/bold]\n"
+            f"Tier / Source: {manifest.tier} / {manifest.source}\n"
+            f"Indexed Periods: {len(snap.indexed_periods)} ({snap.indexed_periods[0]} .. {snap.indexed_periods[-1]})\n"
+            f"Total Submissions: {snap.total_submissions:,}\n"
+            f"Unique Entities (Cases): {snap.total_entities:,}\n"
+            f"Cross-Quarter Cases: {snap.cross_period_entities:,}\n"
+            f"State Shards: {snap.shard_count} ({idx_root / snap.state_dir})",
+            title="Index Snapshot Committed",
+            style="green",
+        )
+    )
+
+
+@index_app.command("update")
+def index_update_cmd(
+    data_period: str = typer.Option(
+        ..., "--data-period", "-d", help="Incoming quarter to append (e.g. 2026Q4)."
+    ),
+    source: str = typer.Option("faers", "--source", "-s", help="Source identifier (e.g. faers)"),
+    tier: str = typer.Option("silver", "--tier", help="Target index tier (e.g. silver, gold)"),
+    package_dir: Optional[Path] = typer.Option(
+        None, "--package-dir", "-p", help="Directory containing Bronze packages."
+    ),
+    index_dir: Optional[Path] = typer.Option(
+        None, "--index-dir", help="Local index root directory."
+    ),
+    shards: int = typer.Option(16, "--shards", help="Number of hash shards (default: 16)."),
+    compact: bool = typer.Option(
+        True,
+        "--compact/--no-compact",
+        help="Compact completed 4-quarter years into annual ledgers.",
+    ),
+    replace: bool = typer.Option(
+        False, "--replace", help="Replace prior entries for this period (for reprocessed releases)."
+    ),
+) -> None:
+    """Incrementally updates the index with a single incoming quarter (never scans historical Bronze)."""
+    from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
+
+    pkg_dir = package_dir or get_default_package_dir()
+    idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
+    period = data_period.upper().strip()
+    src_pkg = _find_bronze_package(pkg_dir, source.lower(), period)
+
+    policy = _resolve_cli_policy(source, shards)
+    state = ShardedStateIndex(idx_root, tier=tier, source=source, policy=policy)
+    manifest = state.update_with_period(
+        source_path=src_pkg,
+        data_period=period,
+        compact_years=compact,
+        replace_period=replace,
+    )
+    snap = manifest.active_snapshot
+    console.print(
+        Panel(
+            f"New Snapshot: [bold]{snap.snapshot_id}[/bold] (parent: {snap.parent_snapshot_id})\n"
+            f"Indexed Periods: {len(snap.indexed_periods)}\n"
+            f"Total Submissions: {snap.total_submissions:,}\n"
+            f"Unique Entities: {snap.total_entities:,}\n"
+            f"Cross-Quarter Cases: {snap.cross_period_entities:,}",
+            title=f"Incremental Index Update ({period})",
+            style="green",
+        )
+    )
+
+
+@index_app.command("compact")
+def index_compact_cmd(
+    source: str = typer.Option("faers", "--source", "-s", help="Source identifier"),
+    tier: str = typer.Option("silver", "--tier", help="Index tier"),
+    index_dir: Optional[Path] = typer.Option(
+        None, "--index-dir", help="Local index root directory."
+    ),
+    keep_quarterly: bool = typer.Option(
+        False, "--keep-quarterly", help="Retain quarterly ledger files after annual compaction."
+    ),
+) -> None:
+    """Compacts completed 4-quarter years in `ledger/` and merges accumulated state deltas into a new base snapshot."""
+    from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
+
+    idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
+    state = ShardedStateIndex(idx_root, tier=tier, source=source)
+
+    compacted_ledgers = state.ledger.compact_completed_years(remove_quarterly=not keep_quarterly)
+    for p in compacted_ledgers:
+        console.print(f"[green]✓ Compacted annual ledger:[/green] {p}")
+
+    manifest = state.load_manifest()
+    compacted_state = False
+    if manifest is not None and manifest.active_snapshot.active_delta_files:
+        new_manifest = state.compact_state_deltas()
+        compacted_state = True
+        console.print(
+            f"[green]✓ Compacted state deltas into immutable base snapshot:[/green] "
+            f"{new_manifest.active_snapshot_id} (gen={new_manifest.generation})"
+        )
+
+    if not compacted_ledgers and not compacted_state:
+        console.print(
+            "[yellow]Nothing to compact (no completed 4-quarter years or pending state deltas).[/yellow]"
+        )
+
+
+@index_app.command("verify")
+def index_verify_cmd(
+    source: str = typer.Option("faers", "--source", "-s", help="Source identifier"),
+    tier: str = typer.Option("silver", "--tier", help="Index tier"),
+    index_dir: Optional[Path] = typer.Option(
+        None, "--index-dir", help="Local index root directory."
+    ),
+) -> None:
+    """Verifies logical rebuild equality by rebuilding from ledgers and comparing canonical state."""
+    import tempfile
+
+    import duckdb
+
+    from raxtik_etl.indexing import (
+        ShardedStateIndex,
+        build_resolved_state_sql,
+        get_default_index_dir,
+    )
+
+    idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
+    state = ShardedStateIndex(idx_root, tier=tier, source=source)
+    active = state.load_manifest()
+    if active is None:
+        console.print(f"[bold red]No manifest.json found at {idx_root}.[/bold red]")
+        raise typer.Exit(code=1)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_root = Path(tmpdir)
+        (tmp_root / "ledger").symlink_to(idx_root / "ledger")
+        rebuilder = ShardedStateIndex(
+            tmp_root, tier=active.tier, source=active.source, policy=active.policy
+        )
+        rebuilt = rebuilder.build_from_ledgers(snapshot_label="verify")
+
+        active_base = [(idx_root / rel).as_posix() for rel in active.active_snapshot.shard_files]
+        active_deltas = [
+            (idx_root / rel).as_posix() for rel in active.active_snapshot.active_delta_files
+        ]
+        rebuilt_base = [(tmp_root / rel).as_posix() for rel in rebuilt.active_snapshot.shard_files]
+
+        active_sql = build_resolved_state_sql(active_base, active_deltas)
+        rebuilt_sql = build_resolved_state_sql(rebuilt_base, ())
+
+        con = duckdb.connect(":memory:")
+        try:
+            a_rows = con.execute(f"SELECT * FROM ({active_sql}) ORDER BY case_id").fetchall()
+            r_rows = con.execute(f"SELECT * FROM ({rebuilt_sql}) ORDER BY case_id").fetchall()
+            if a_rows != r_rows:
+                console.print(
+                    "[bold red]Logical state mismatch detected vs. full ledger rebuild![/bold red]"
+                )
+                raise typer.Exit(code=1)
+        finally:
+            con.close()
+
+    console.print(
+        f"[bold green]✓ Verification passed:[/bold green] Active snapshot "
+        f"{active.active_snapshot_id} (gen={active.generation}, "
+        f"{len(active.active_snapshot.active_delta_files)} deltas, "
+        f"{active.active_snapshot.total_entities:,} entities) matches full ledger rebuild logically."
+    )
+
+
+@index_app.command("lookup")
+def index_lookup_cmd(
+    case_id: str = typer.Option(..., "--case-id", "-c", help="Case ID to inspect."),
+    source: str = typer.Option("faers", "--source", "-s", help="Source identifier"),
+    tier: str = typer.Option("silver", "--tier", help="Index tier"),
+    index_dir: Optional[Path] = typer.Option(
+        None, "--index-dir", help="Local index root directory."
+    ),
+    snapshot: Optional[str] = typer.Option(
+        None, "--snapshot", help="Optional historical snapshot ID."
+    ),
+) -> None:
+    """Performs an O(1) single-shard lookup and displays the full case submission timeline."""
+    from rich.table import Table
+
+    from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
+
+    idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
+    state = ShardedStateIndex(idx_root, tier=tier, source=source)
+    record = state.get_case_timeline(case_id.strip(), snapshot_id=snapshot)
+    if record is None:
+        console.print(f"[yellow]Case '{case_id}' not found in {tier} index.[/yellow]")
+        raise typer.Exit(code=1)
+
+    tbl = Table(
+        title=f"Case Timeline: {record['case_id']} (Winner: {record['latest_primary_id']} @ {record['latest_quarter']})",
+        style="cyan",
+    )
+    tbl.add_column("Rank", style="bold yellow")
+    tbl.add_column("Quarter", style="green")
+    tbl.add_column("Version", style="white")
+    tbl.add_column("Primary ID", style="bold white")
+    tbl.add_column("FDA Date", style="dim")
+    tbl.add_column("Mfr Date", style="dim")
+
+    timeline: Any = record["timeline"]
+    for idx, entry in enumerate(timeline, start=1):
+        tbl.add_row(
+            f"#{idx}" + (" ★" if idx == 1 else ""),
+            str(entry["quarter"]),
+            str(entry["version"]),
+            str(entry["primary_id"]),
+            str(entry["fda_date"]),
+            str(entry["mfr_date"]),
+        )
+    console.print(tbl)
+
+
+@index_app.command("upload")
+def index_upload_cmd(
+    source: str = typer.Option("faers", "--source", "-s", help="Source identifier"),
+    tier: str = typer.Option("silver", "--tier", help="Index tier"),
+    index_dir: Optional[Path] = typer.Option(
+        None, "--index-dir", help="Local index root directory."
+    ),
+    repo_id: str = typer.Option(DEFAULT_HF_REPO, "--repo-id", help="Hugging Face dataset repo ID."),
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="Hugging Face write token."),
+) -> None:
+    """Uploads the local `{tier}/index/` folder to Hugging Face Hub."""
+    from raxtik_etl.indexing import get_default_index_dir, upload_index_to_hf
+
+    idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
+    url = upload_index_to_hf(index_root=idx_root, repo_id=repo_id, tier=tier, token=token)
+    console.print(f"[bold green]✓ Published {tier} index to Hugging Face:[/bold green] {url}")
+
+
 if __name__ == "__main__":
     app()

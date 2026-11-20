@@ -25,6 +25,7 @@ from raxtik_etl.sources.protocol import SourceAdapter
 from raxtik_etl.sources.temporal import normalize_quarter
 
 if TYPE_CHECKING:
+    from raxtik_etl.indexing.models import ResolutionPolicy
     from raxtik_etl.migrations.base import BaseMigration
 
 
@@ -61,6 +62,16 @@ class BaseSourceAdapter(SourceAdapter):
     def get_summary_views_sql(self) -> Dict[str, str]:
         """Default implementation returning no pre-aggregated summary views. Override if applicable."""
         return {}
+
+    def get_resolution_policy(self) -> ResolutionPolicy:
+        """Returns the tier-agnostic ResolutionPolicy for this source connector.
+
+        Override in source connectors (e.g. FAERS, VAERS, EV) to customize
+        deduplication ranking columns, tie-breakers, or child table lists.
+        """
+        from raxtik_etl.indexing.models import ResolutionPolicy
+
+        return ResolutionPolicy()
 
     def normalize_data_period(self, period_or_filename: Union[str, Path]) -> str:
         """Helper to normalize data period string (e.g. '2004q1' -> '2004Q1')."""

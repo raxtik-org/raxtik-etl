@@ -60,6 +60,9 @@ class BaseDataset:
         revision: Optional[str] = None,
         tier: str = "bronze",
         remote: bool = False,
+        index_dir: Optional[Union[str, Path]] = None,
+        cache_index: bool = False,
+        as_of_period: Optional[str] = None,
     ) -> None:
         """Initializes a dataset connection (local or remote streaming via HTTP).
 
@@ -71,8 +74,13 @@ class BaseDataset:
             hf_repo: Optional Hugging Face dataset repository ID override.
             timeout: HTTP request timeout in seconds when downloading.
             revision: Hugging Face Git revision or tag (e.g., 'main' or 'v0.1.0').
-            tier: Dataset release tier ('bronze' or 'silver'). Defaults to 'bronze'.
+            tier: Dataset release tier ('bronze', 'silver', or future 'gold'). Defaults to 'bronze'.
             remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
+            index_dir: Optional local directory containing a pre-built tier index (`manifest.json`).
+            cache_index: When `remote=True` and `tier != 'bronze'`, caches the lightweight index
+                locally for 0ms index latency while keeping Bronze data remote. Defaults to False
+                (100% zero-disk fully remote).
+            as_of_period: Optional upper-bound period (e.g. '2005Q3') for time-bounded winner resolution.
 
         Raises:
             ValueError: If data_period is empty.
@@ -88,9 +96,17 @@ class BaseDataset:
         )
         self.pkg_dir = Path(package_dir) if package_dir else get_default_package_dir()
         self.duckdb_path = self.pkg_dir / f"{self.source}_{self.data_period}.duckdb"
-        self.tier = tier
+        self.tier = (tier or "bronze").lower().strip()
         self.remote = remote
+        self.index_dir = Path(index_dir) if index_dir else None
+        self.cache_index = cache_index
+        self.as_of_period = as_of_period
         self._remote_url: Optional[str] = None
+        self._index_shard_uris: Optional[list[str]] = None
+        self._index_delta_uris: list[str] = []
+        self._index_policy: Any = None
+
+        is_derived_tier = self.tier != "bronze"
 
         if self.remote:
             from raxtik_etl.distribution.huggingface import connect_remote_hf_duckdb
@@ -100,8 +116,15 @@ class BaseDataset:
                 source=self.source,
                 data_period=self.data_period,
                 revision=revision,
-                tier=self.tier,
+                tier="bronze" if is_derived_tier else self.tier,
             )
+            if is_derived_tier:
+                self._mount_tier_middleware(
+                    bronze_catalog=self.source,
+                    download_if_missing=True,
+                    timeout=timeout,
+                    revision=revision,
+                )
             self._validate_package_compatibility()
             return
 
@@ -118,7 +141,7 @@ class BaseDataset:
                     source_name=self.source,
                     timeout=timeout,
                     revision=revision,
-                    tier=self.tier,
+                    tier="bronze" if is_derived_tier else self.tier,
                 )
             else:
                 raise FileNotFoundError(
@@ -127,8 +150,89 @@ class BaseDataset:
                     f"or pass `download_if_missing=True` to download from Hugging Face."
                 )
 
-        self._con = duckdb.connect(self.duckdb_path.as_posix(), read_only=True)
+        if is_derived_tier:
+            self._con = duckdb.connect(":memory:")
+            self._con.execute(f"ATTACH '{self.duckdb_path.as_posix()}' AS bronze_db (READ_ONLY);")
+            self._mount_tier_middleware(
+                bronze_catalog="bronze_db",
+                download_if_missing=download_if_missing,
+                timeout=timeout,
+                revision=revision,
+            )
+        else:
+            self._con = duckdb.connect(self.duckdb_path.as_posix(), read_only=True)
+
         self._validate_package_compatibility()
+
+    def _mount_tier_middleware(
+        self,
+        bronze_catalog: str,
+        download_if_missing: bool,
+        timeout: int,
+        revision: Optional[str],
+    ) -> None:
+        """Resolves index shards (local, cached, or 100% remote) and mounts tier views."""
+        from raxtik_etl.indexing.distribution import (
+            fetch_remote_index_manifest,
+            get_default_index_dir,
+            resolve_local_index_shards,
+            sync_remote_index_to_local_cache,
+        )
+        from raxtik_etl.indexing.middleware import apply_tier_views
+
+        if self.remote:
+            if self.index_dir and (self.index_dir / "manifest.json").exists():
+                manifest, shard_uris, delta_uris = resolve_local_index_shards(self.index_dir)
+            elif self.cache_index:
+                manifest, shard_uris, delta_uris = sync_remote_index_to_local_cache(
+                    repo_id=self.hf_repo,
+                    source=self.source,
+                    tier=self.tier,
+                    revision=revision,
+                    index_dir=self.index_dir,
+                    timeout=timeout,
+                )
+            else:
+                # 100% zero-disk fully remote mode via DuckDB httpfs
+                manifest, shard_uris, delta_uris = fetch_remote_index_manifest(
+                    repo_id=self.hf_repo,
+                    tier=self.tier,
+                    revision=revision,
+                    timeout=timeout,
+                )
+            # Switch to writable in-memory catalog to mount views over remote bronze catalog
+            self._con.execute("USE memory;")
+        else:
+            local_root = self.index_dir or get_default_index_dir(source=self.source, tier=self.tier)
+            if (local_root / "manifest.json").exists():
+                manifest, shard_uris, delta_uris = resolve_local_index_shards(local_root)
+            elif download_if_missing:
+                manifest, shard_uris, delta_uris = sync_remote_index_to_local_cache(
+                    repo_id=self.hf_repo,
+                    source=self.source,
+                    tier=self.tier,
+                    revision=revision,
+                    index_dir=local_root,
+                    timeout=timeout,
+                )
+            else:
+                raise FileNotFoundError(
+                    f"Local {self.tier} index manifest not found at {local_root / 'manifest.json'}. "
+                    f"Build it using `raxtik-etl index build --tier {self.tier}` or pass `download_if_missing=True`."
+                )
+
+        self._index_shard_uris = shard_uris
+        self._index_delta_uris = delta_uris
+        self._index_policy = manifest.policy
+        apply_tier_views(
+            con=self._con,
+            bronze_catalog=bronze_catalog,
+            data_period=self.data_period,
+            state_shard_uris=shard_uris,
+            policy=manifest.policy,
+            as_of_period=self.as_of_period,
+            delta_uris=delta_uris,
+        )
 
     @classmethod
     def from_hf(
@@ -141,6 +245,9 @@ class BaseDataset:
         revision: Optional[str] = None,
         tier: str = "bronze",
         remote: bool = False,
+        index_dir: Optional[Union[str, Path]] = None,
+        cache_index: bool = False,
+        as_of_period: Optional[str] = None,
     ) -> BaseDataset:
         """Loads a safety data package, automatically downloading from Hugging Face Hub if not present locally.
 
@@ -151,8 +258,11 @@ class BaseDataset:
             hf_repo: Optional Hugging Face dataset repository override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag (defaults to version tag or 'main').
-            tier: Dataset release tier ('bronze' or 'silver'). Defaults to 'bronze'.
+            tier: Dataset release tier ('bronze', 'silver', or future 'gold'). Defaults to 'bronze'.
             remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
+            index_dir: Optional local directory containing a pre-built tier index.
+            cache_index: When `remote=True` and `tier != 'bronze'`, caches the index locally.
+            as_of_period: Optional upper-bound period for time-bounded winner resolution.
 
         Returns:
             Instantiated BaseDataset connected to downloaded or remotely attached DuckDB package.
@@ -167,6 +277,9 @@ class BaseDataset:
             revision=revision,
             tier=tier,
             remote=remote,
+            index_dir=index_dir,
+            cache_index=cache_index,
+            as_of_period=as_of_period,
         )
 
     def compute_sha256(self) -> str:
@@ -343,6 +456,66 @@ class BaseDataset:
 
         console.print(table)
 
+    def case_timeline(self, case_id: str) -> Optional[Dict[str, Any]]:
+        """Returns the full submission timeline for a case from the mounted tier index.
+
+        Requires `tier != 'bronze'` (e.g. `tier='silver'`).
+        """
+        if self.tier == "bronze":
+            raise ValueError("case_timeline() requires a derived tier index (e.g. tier='silver').")
+        rows = self._con.execute(
+            """
+            SELECT
+                case_id,
+                latest_primary_id,
+                latest_quarter,
+                first_quarter,
+                submissions_count,
+                is_cross_quarter,
+                resolution_tie,
+                timeline
+            FROM _index_state
+            WHERE case_id = ?
+            """,
+            [case_id],
+        ).fetchall()
+        if not rows:
+            return None
+        row = rows[0]
+        return {
+            "case_id": row[0],
+            "latest_primary_id": row[1],
+            "latest_quarter": row[2],
+            "first_quarter": row[3],
+            "submissions_count": row[4],
+            "is_cross_quarter": row[5],
+            "resolution_tie": row[6],
+            "timeline": row[7],
+        }
+
+    def materialize_tier(self, dest_path: Union[str, Path]) -> Path:
+        """Materializes this tier-filtered dataset into a standalone portable DuckDB file."""
+        if self.tier == "bronze":
+            raise ValueError("materialize_tier() requires a derived tier (e.g. tier='silver').")
+        if self.remote:
+            raise NotImplementedError(
+                "materialize_tier() requires a local Bronze package. Open with remote=False first."
+            )
+        if not self._index_shard_uris:
+            raise RuntimeError("Tier index shards are not mounted.")
+        from raxtik_etl.indexing.middleware import materialize_filtered_package
+
+        return materialize_filtered_package(
+            bronze_db_path=self.duckdb_path,
+            dest_db_path=dest_path,
+            data_period=self.data_period,
+            state_shard_uris=self._index_shard_uris,
+            policy=self._index_policy,
+            tier=self.tier,
+            as_of_period=self.as_of_period,
+            delta_uris=self._index_delta_uris,
+        )
+
     def close(self) -> None:
         """Closes the underlying DuckDB database connection.
 
@@ -397,6 +570,9 @@ class Dataset(BaseDataset):
         revision: Optional[str] = None,
         tier: str = "bronze",
         remote: bool = False,
+        index_dir: Optional[Union[str, Path]] = None,
+        cache_index: bool = False,
+        as_of_period: Optional[str] = None,
     ) -> BaseDataset:  # type: ignore[misc]
         """Instantiates either a specialized source client subclass or BaseDataset.
 
@@ -408,8 +584,11 @@ class Dataset(BaseDataset):
             hf_repo: Optional Hugging Face dataset repository ID override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag.
-            tier: Dataset release tier ('bronze' or 'silver'). Defaults to 'bronze'.
+            tier: Dataset release tier ('bronze', 'silver', or future 'gold'). Defaults to 'bronze'.
             remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
+            index_dir: Optional local directory containing a pre-built tier index.
+            cache_index: When `remote=True` and `tier != 'bronze'`, caches the index locally.
+            as_of_period: Optional upper-bound period for time-bounded winner resolution.
 
         Returns:
             Configured dataset client instance.
@@ -426,6 +605,9 @@ class Dataset(BaseDataset):
                 revision=revision,
                 tier=tier,
                 remote=remote,
+                index_dir=index_dir,
+                cache_index=cache_index,
+                as_of_period=as_of_period,
             )
         instance = super().__new__(cls)
         return instance
@@ -441,6 +623,9 @@ class Dataset(BaseDataset):
         revision: Optional[str] = None,
         tier: str = "bronze",
         remote: bool = False,
+        index_dir: Optional[Union[str, Path]] = None,
+        cache_index: bool = False,
+        as_of_period: Optional[str] = None,
     ) -> BaseDataset:
         """Loads a safety data package, automatically downloading from Hugging Face Hub if not present locally.
 
@@ -451,8 +636,11 @@ class Dataset(BaseDataset):
             hf_repo: Optional Hugging Face dataset repository override.
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag (defaults to version tag or 'main').
-            tier: Dataset release tier ('bronze' or 'silver'). Defaults to 'bronze'.
+            tier: Dataset release tier ('bronze', 'silver', or future 'gold'). Defaults to 'bronze'.
             remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
+            index_dir: Optional local directory containing a pre-built tier index.
+            cache_index: When `remote=True` and `tier != 'bronze'`, caches the index locally.
+            as_of_period: Optional upper-bound period for time-bounded winner resolution.
 
         Returns:
             Instantiated Dataset connected to downloaded or remotely attached DuckDB package.
@@ -473,6 +661,9 @@ class Dataset(BaseDataset):
                 revision=revision,
                 tier=tier,
                 remote=remote,
+                index_dir=index_dir,
+                cache_index=cache_index,
+                as_of_period=as_of_period,
             )
         return cls(
             data_period=data_period,
@@ -484,4 +675,7 @@ class Dataset(BaseDataset):
             revision=revision,
             tier=tier,
             remote=remote,
+            index_dir=index_dir,
+            cache_index=cache_index,
+            as_of_period=as_of_period,
         )

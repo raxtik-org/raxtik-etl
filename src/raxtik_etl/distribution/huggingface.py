@@ -670,3 +670,121 @@ def connect_remote_hf_duckdb(
         ) from last_err
 
     return remote_url, con
+
+
+def build_hf_resolve_url(repo_id: str, revision: str, rel_path: str) -> str:
+    """Builds a direct Hugging Face Hub HTTPS resolve URL for a repository file."""
+    clean = rel_path.lstrip("/")
+    return f"https://huggingface.co/datasets/{repo_id}/resolve/{revision}/{clean}"
+
+
+def fetch_hf_json(
+    repo_id: str,
+    rel_path: str,
+    revision: Optional[str] = None,
+    timeout: int = DEFAULT_HTTP_TIMEOUT,
+) -> tuple[str, dict[str, Any]]:
+    """Fetches and parses a JSON file from a Hugging Face dataset repository.
+
+    Returns:
+        Tuple of `(resolved_revision, parsed_json_dict)`.
+
+    Raises:
+        FileNotFoundError: If the file does not exist (HTTP != 200).
+    """
+    import json
+
+    rev = resolve_hf_revision(repo_id=repo_id, revision=revision, timeout=timeout)
+    url = build_hf_resolve_url(repo_id, rev, rel_path)
+    resp = requests.get(url, timeout=timeout)  # nosec B113
+    if resp.status_code != 200:
+        raise FileNotFoundError(f"Remote artifact not found at {url} (HTTP {resp.status_code}).")
+    return rev, json.loads(resp.text)
+
+
+def download_hf_file(
+    url: str,
+    dest_path: Path,
+    timeout: int = DEFAULT_HTTP_TIMEOUT,
+) -> Path:
+    """Streams a single remote Hugging Face file to `dest_path` atomically."""
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file = dest_path.with_suffix(dest_path.suffix + ".tmp")
+    try:
+        with requests.get(url, stream=True, timeout=timeout) as r:  # nosec B113
+            r.raise_for_status()
+            with tmp_file.open("wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+        tmp_file.replace(dest_path)
+    except Exception:
+        tmp_file.unlink(missing_ok=True)
+        raise
+    return dest_path
+
+
+def upload_hf_index_folder(
+    index_root: Path,
+    repo_id: str,
+    tier: str = "silver",
+    token: Optional[str] = None,
+    enforce_optimistic_concurrency: bool = True,
+    timeout: int = DEFAULT_HTTP_TIMEOUT,
+) -> str:
+    """Publishes a local `{tier}/index/` folder to Hugging Face Hub in a single commit.
+
+    When `enforce_optimistic_concurrency=True`, checks the remote `{tier}/index/manifest.json`
+    before uploading and rejects publication if the remote `active_snapshot_id` no longer
+    matches the local snapshot's `parent_snapshot_id` (preventing lost updates).
+    """
+    from huggingface_hub import HfApi  # type: ignore
+
+    from raxtik_etl.indexing.models import IndexManifest
+
+    manifest_path = index_root / "manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Index manifest not found at {manifest_path}")
+
+    resolved_token = token or os.getenv("HF_TOKEN")
+    if not resolved_token:
+        raise ValueError("Hugging Face write token required. Pass --token or set HF_TOKEN env var.")
+
+    local_manifest = IndexManifest.load(manifest_path)
+    tier_clean = tier.lower().strip()
+    remote_manifest_rel = f"{tier_clean}/index/manifest.json"
+
+    if enforce_optimistic_concurrency:
+        try:
+            _, remote_data = fetch_hf_json(
+                repo_id=repo_id,
+                rel_path=remote_manifest_rel,
+                revision="main",
+                timeout=timeout,
+            )
+            remote_active = remote_data.get("active_snapshot_id")
+            expected_parent = local_manifest.active_snapshot.parent_snapshot_id
+            if remote_active and remote_active != expected_parent:
+                raise RuntimeError(
+                    f"Optimistic concurrency conflict publishing {local_manifest.active_snapshot_id}: "
+                    f"remote active snapshot is '{remote_active}', but local snapshot expects parent "
+                    f"'{expected_parent}'. Pull/re-sync before publishing."
+                )
+        except FileNotFoundError:
+            # First publication of this tier index — no prior remote manifest exists
+            pass
+
+    api = HfApi(token=resolved_token)
+    api.upload_folder(
+        folder_path=index_root.as_posix(),
+        path_in_repo=f"{tier_clean}/index",
+        repo_id=repo_id,
+        repo_type="dataset",
+        ignore_patterns=["*.tmp", ".tmp_*"],
+        commit_message=(
+            f"Publish {tier_clean} index {local_manifest.active_snapshot_id} "
+            f"(gen={local_manifest.generation}, "
+            f"{local_manifest.active_snapshot.total_entities} entities)"
+        ),
+    )
+    return build_hf_resolve_url(repo_id, "main", remote_manifest_rel)
