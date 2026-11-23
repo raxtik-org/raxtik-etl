@@ -260,7 +260,7 @@ def materialize_filtered_package(
 
         if "_metadata" in existing_tables:
             con.execute("DELETE FROM _metadata WHERE key = 'tier';")
-            con.execute("INSERT INTO _metadata VALUES ('tier', ?);", [tier])
+            con.execute("INSERT INTO _metadata (key, value) VALUES ('tier', ?);", [tier])
 
         con.execute("DETACH bronze_db;")
     except Exception:

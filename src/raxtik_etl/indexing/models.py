@@ -13,9 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-INDEX_FORMAT_VERSION = "1.0.0"
-DEFAULT_SHARD_COUNT = 16
-DEFAULT_DELTA_COMPACTION_THRESHOLD = 4
+INDEX_FORMAT_VERSION = "1.0.0"  # Schema version of manifest.json and index Parquet files
+DEFAULT_SHARD_COUNT = 16  # Number of hash-partitioned base state files (shard_00..shard_15.parquet)
+DEFAULT_DELTA_COMPACTION_THRESHOLD = (
+    4  # Auto-merge deltas into a new base once 4 quarter deltas accumulate (1 year)
+)
 
 
 def utc_now_iso() -> str:

@@ -1101,16 +1101,25 @@ def _resolve_cli_policy(source: str, shards: int) -> Any:
 
 
 def _find_bronze_package(pkg_dir: Path, source: str, period: str) -> Path:
-    """Locates local Bronze `.duckdb` or `.parquet` package for a given period."""
+    """Locates local Bronze `.duckdb` or `.parquet` package, auto-downloading from HF if missing."""
     db_path = pkg_dir / f"{source}_{period}.duckdb"
     if db_path.exists():
         return db_path
     pq_path = pkg_dir / f"{source}_{period}.parquet"
     if pq_path.exists():
         return pq_path
-    raise FileNotFoundError(
-        f"Bronze package for {source} {period} not found in {pkg_dir} "
-        f"(checked {db_path.name} and {pq_path.name})."
+
+    from raxtik_etl.distribution.huggingface import download_package_from_hf
+
+    console.print(
+        f"  [cyan]Bronze package {source}_{period} not found locally — downloading from Hugging Face...[/cyan]"
+    )
+    return download_package_from_hf(
+        data_period_or_name=period,
+        dest_dir=pkg_dir,
+        repo_id=DEFAULT_HF_REPO,
+        source_name=source,
+        tier="bronze",
     )
 
 
@@ -1132,12 +1141,20 @@ def _discover_local_periods(pkg_dir: Path, source: str) -> List[str]:
 def index_build_cmd(
     source: str = typer.Option("faers", "--source", "-s", help="Source identifier (e.g. faers)"),
     tier: str = typer.Option("silver", "--tier", help="Target index tier (e.g. silver, gold)"),
+    data_period: Optional[str] = typer.Option(
+        None,
+        "--data-period",
+        "-d",
+        help="Single quarter to index (e.g. 2004Q1). Alternative to --start/--end.",
+    ),
     start: Optional[str] = typer.Option(
         None,
         "--start",
-        help="Optional start quarter (e.g. 2004Q1). If omitted, indexes all local packages.",
+        help="Optional start quarter for a range (e.g. 2004Q1). If omitted, indexes all local packages.",
     ),
-    end: Optional[str] = typer.Option(None, "--end", help="Optional end quarter (e.g. 2026Q3)."),
+    end: Optional[str] = typer.Option(
+        None, "--end", help="Optional end quarter for a range (e.g. 2026Q3)."
+    ),
     package_dir: Optional[Path] = typer.Option(
         None, "--package-dir", "-p", help="Directory containing Bronze packages."
     ),
@@ -1156,7 +1173,7 @@ def index_build_cmd(
         False, "--overwrite", help="Re-extract existing period ledgers if already present."
     ),
 ) -> None:
-    """Deterministically builds a fresh immutable tier index snapshot from local Bronze packages."""
+    """Deterministically builds a fresh immutable tier index snapshot from Bronze packages."""
     from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
 
     pkg_dir = package_dir or get_default_package_dir()
@@ -1164,7 +1181,16 @@ def index_build_cmd(
     policy = _resolve_cli_policy(source, shards)
     state = ShardedStateIndex(idx_root, tier=tier, source=source, policy=policy)
 
-    if start and end:
+    if data_period and (start or end):
+        console.print(
+            "[bold red]Use either --data-period for a single quarter or --start/--end for a range, not both.[/bold red]"
+        )
+        raise typer.Exit(code=1)
+    elif data_period:
+        from raxtik_etl.sources.temporal import normalize_quarter
+
+        periods = [normalize_quarter(data_period)]
+    elif start and end:
         periods = parse_quarter_range(start, end)
     elif start or end:
         console.print("[bold red]Both --start and --end must be specified together.[/bold red]")
@@ -1234,10 +1260,11 @@ def index_update_cmd(
 ) -> None:
     """Incrementally updates the index with a single incoming quarter (never scans historical Bronze)."""
     from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
+    from raxtik_etl.sources.temporal import normalize_quarter
 
     pkg_dir = package_dir or get_default_package_dir()
     idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
-    period = data_period.upper().strip()
+    period = normalize_quarter(data_period)
     src_pkg = _find_bronze_package(pkg_dir, source.lower(), period)
 
     policy = _resolve_cli_policy(source, shards)
@@ -1327,7 +1354,7 @@ def index_verify_cmd(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_root = Path(tmpdir)
-        (tmp_root / "ledger").symlink_to(idx_root / "ledger")
+        (tmp_root / "ledger").symlink_to((idx_root / "ledger").resolve())
         rebuilder = ShardedStateIndex(
             tmp_root, tier=active.tier, source=active.source, policy=active.policy
         )
