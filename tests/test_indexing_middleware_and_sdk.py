@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 from unittest.mock import patch
 
 import duckdb
+import pytest
 
 from raxtik_etl.indexing import ResolutionPolicy, ShardedStateIndex
 from raxtik_etl.schema.registry import CANONICAL_SCHEMA_VERSION
@@ -261,8 +262,6 @@ def test_sdk_remote_silver_supports_fully_remote_and_cache_index(tmp_path: Path)
 
 
 def test_sdk_rejects_unsupported_package_format_version(tmp_path: Path) -> None:
-    import pytest
-
     pkg_dir = tmp_path / "packages"
     db_path = _build_bronze_package(
         pkg_dir / "faers_2024Q1.duckdb",

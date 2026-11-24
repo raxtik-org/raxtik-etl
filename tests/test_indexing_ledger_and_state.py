@@ -446,7 +446,7 @@ def test_optimistic_concurrency_rejects_stale_parent(tmp_path: Path) -> None:
         )
 
 
-def test_null_and_empty_case_id_preserved_via_report_fallback(tmp_path: Path) -> None:
+def test_null_and_empty_case_id_fallback(tmp_path: Path) -> None:
     """NULL or blank CASEIDs must never be dropped or merged into a single fake case."""
     bronze_dir = tmp_path / "bronze"
     index_root = tmp_path / "silver" / "index"
