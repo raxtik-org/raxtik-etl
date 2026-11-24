@@ -258,3 +258,23 @@ def test_sdk_remote_silver_supports_fully_remote_and_cache_index(tmp_path: Path)
         ) as ds:
             mock_sync_cache.assert_called_once()
             assert ds.cases()["case_id"].to_list() == ["C2"]
+
+
+def test_sdk_rejects_unsupported_package_format_version(tmp_path: Path) -> None:
+    import pytest
+
+    pkg_dir = tmp_path / "packages"
+    db_path = _build_bronze_package(
+        pkg_dir / "faers_2024Q1.duckdb",
+        demo_rows=[("101", "C1", 1, "20240101", None)],
+        drug_rows=[("101", 1, "ASPIRIN")],
+        reac_rows=[("101", "HEADACHE")],
+    )
+    con = duckdb.connect(db_path.as_posix())
+    try:
+        con.execute("UPDATE _metadata SET value = '2.0.0' WHERE key = 'package_format_version';")
+    finally:
+        con.close()
+
+    with pytest.raises(ValueError, match="Unsupported package_format_version '2.0.0'"):
+        BaseDataset("2024Q1", source="faers", package_dir=pkg_dir, tier="bronze")

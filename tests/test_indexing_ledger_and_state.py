@@ -444,3 +444,33 @@ def test_optimistic_concurrency_rejects_stale_parent(tmp_path: Path) -> None:
             token="fake-token",
             enforce_optimistic_concurrency=True,
         )
+
+
+def test_null_and_empty_case_id_preserved_via_report_fallback(tmp_path: Path) -> None:
+    """NULL or blank CASEIDs must never be dropped or merged into a single fake case."""
+    bronze_dir = tmp_path / "bronze"
+    index_root = tmp_path / "silver" / "index"
+    state = ShardedStateIndex(
+        index_root, tier="silver", source="faers", policy=ResolutionPolicy(shard_count=4)
+    )
+
+    pkg = _create_bronze_duckdb(
+        bronze_dir / "faers_2024Q1.duckdb",
+        [
+            ("1001", "C1", 1, "20240101", None),
+            ("1002", None, 1, "20240102", None),  # type: ignore[list-item]
+            ("1003", "", 1, "20240103", None),
+            ("1004", "   ", 1, "20240104", None),
+        ],
+    )
+    manifest = state.update_with_period(pkg, "2024Q1")
+
+    # All 4 distinct reports must survive as 4 distinct entities (zero dropped, zero merged!)
+    assert manifest.active_snapshot.total_entities == 4
+    assert manifest.active_snapshot.total_submissions == 4
+
+    for pid in ("1002", "1003", "1004"):
+        rec = state.get_case_timeline(f"REPORT:{pid}")
+        assert rec is not None
+        assert rec["latest_primary_id"] == pid
+        assert rec["submissions_count"] == 1

@@ -129,16 +129,17 @@ class LedgerManager:
             extract_sql = f"""
                 COPY (
                     SELECT DISTINCT
-                        TRIM(CAST({self.policy.entity_key} AS VARCHAR)) AS case_id,
+                        COALESCE(
+                            NULLIF(TRIM(CAST({self.policy.entity_key} AS VARCHAR)), ''),
+                            'REPORT:' || TRIM(CAST({self.policy.record_key} AS VARCHAR))
+                        ) AS case_id,
                         TRIM(CAST({self.policy.record_key} AS VARCHAR)) AS primary_id,
                         '{period}' AS data_period,
                         {version_expr} AS canonical_case_version,
                         {reg_date_expr} AS latest_regulatory_date,
                         {mfr_date_expr} AS manufacturer_date
                     FROM {relation_sql}
-                    WHERE {self.policy.entity_key} IS NOT NULL
-                      AND TRIM(CAST({self.policy.entity_key} AS VARCHAR)) <> ''
-                      AND {self.policy.record_key} IS NOT NULL
+                    WHERE {self.policy.record_key} IS NOT NULL
                       AND TRIM(CAST({self.policy.record_key} AS VARCHAR)) <> ''
                     ORDER BY case_id, primary_id
                 ) TO '{tmp_path.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD);

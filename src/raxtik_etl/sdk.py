@@ -307,10 +307,13 @@ class BaseDataset:
             True if verification succeeds, False if no expected checksum is found.
 
         Raises:
+            NotImplementedError: If connected in `remote=True` streaming mode.
             ValueError: If computed checksum does not match expected checksum.
         """
         if self.remote:
-            return True
+            raise NotImplementedError(
+                "Checksum verification requires a local file. Pass `remote=False` to download."
+            )
         sha_file = self.duckdb_path.with_suffix(".duckdb.sha256")
         target_sha = expected_sha256
         if target_sha is None and sha_file.exists():
@@ -328,21 +331,31 @@ class BaseDataset:
         return False
 
     def _validate_package_compatibility(self) -> None:
-        """Validates that the package format version is compatible with this SDK version.
+        """Validates that the package format version is compatible with this SDK (supported: 1.x).
 
-        Returns:
-            None
+        Raises:
+            ValueError: If `package_format_version` is malformed or has an unsupported major version.
         """
         try:
             rows = self._con.execute(
                 "SELECT value FROM _metadata WHERE key = 'package_format_version'"
             ).fetchall()
-            if rows:
-                self.package_format_version = rows[0][0]
-            else:
-                self.package_format_version = "1.0.0"
-        except Exception:
+        except duckdb.CatalogException:
+            # Legacy package without a `_metadata` table
             self.package_format_version = "1.0.0"
+            return
+
+        version_str = str(rows[0][0]).strip() if rows else "1.0.0"
+        parts = version_str.split(".")
+        if not parts or not parts[0].isdigit():
+            raise ValueError(f"Invalid package_format_version '{version_str}' in package metadata.")
+        major = int(parts[0])
+        if major != 1:
+            raise ValueError(
+                f"Unsupported package_format_version '{version_str}' "
+                "(this version of raxtik-etl supports 1.x). Please upgrade raxtik-etl."
+            )
+        self.package_format_version = version_str
 
     def query(self, sql: str) -> pl.DataFrame:
         """Executes arbitrary SQL on the package and returns a Polars DataFrame.
