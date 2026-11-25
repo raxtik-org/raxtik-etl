@@ -65,9 +65,11 @@ jobs:
       - name: Read release notes from CHANGELOG.md
         if: startsWith(github.ref, 'refs/tags/v')
         id: changelog
+        continue-on-error: true
         uses: mindsers/changelog-reader-action@5ca6b859dbd794b56d53077cf5969269e676ec66 # v2.4.0
         with:
           path: ./CHANGELOG.md
+          version_scheme: pep440
           validation_level: warn
 
       - name: Create or update GitHub Release with distribution assets
