@@ -75,6 +75,8 @@ def _order_by_sql(policy: ResolutionPolicy) -> str:
     if policy.numeric_record_key_tiebreaker:
         terms.append("TRY_CAST(primary_id AS BIGINT) DESC NULLS LAST")
     terms.append("primary_id DESC")
+    # Strict total-order tie-breaker in case FDA republishes the same primary_id across quarters
+    terms.append("data_period DESC")
     return ", ".join(terms)
 
 
