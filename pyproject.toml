@@ -12,6 +12,20 @@ license = { text = "AGPL-3.0-or-later" }
 authors = [
     { name = "Raxtik Team" }
 ]
+keywords = [
+    "pharmacovigilance",
+    "drug-safety",
+    "adverse-events",
+    "faers",
+    "fda",
+    "etl",
+    "duckdb",
+    "polars",
+    "parquet",
+    "healthcare-data",
+    "clinical-data",
+    "signal-detection",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -25,7 +39,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Typing :: Typed",
 ]
 dependencies = [
     "duckdb>=1.1.0",
