@@ -122,6 +122,8 @@ def upload_index_to_hf(
     tier: str = "silver",
     token: Optional[str] = None,
     enforce_optimistic_concurrency: bool = True,
+    tag: Optional[str] = None,
+    force: bool = False,
 ) -> str:
     """Delegates index publication to `raxtik_etl.distribution.huggingface.upload_hf_index_folder`."""
     return upload_hf_index_folder(
@@ -130,4 +132,6 @@ def upload_index_to_hf(
         tier=tier,
         token=token,
         enforce_optimistic_concurrency=enforce_optimistic_concurrency,
+        tag=tag,
+        force=force,
     )

@@ -1172,6 +1172,11 @@ def index_build_cmd(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Re-extract existing period ledgers if already present."
     ),
+    cleanup_bronze: bool = typer.Option(
+        False,
+        "--cleanup-bronze",
+        help="Delete each downloaded Bronze package immediately after extracting its ledger (keeps disk small for 91-quarter builds).",
+    ),
 ) -> None:
     """Deterministically builds a fresh immutable tier index snapshot from Bronze packages."""
     from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
@@ -1212,6 +1217,13 @@ def index_build_cmd(
             console.print(f"  [dim]Extracted ledger:[/dim] {period}")
         except FileExistsError:
             console.print(f"  [dim]Ledger already exists (skipped):[/dim] {period}")
+        if cleanup_bronze and src_pkg.exists():
+            if src_pkg.is_dir():
+                import shutil
+
+                shutil.rmtree(src_pkg, ignore_errors=True)
+            else:
+                src_pkg.unlink(missing_ok=True)
 
     if compact:
         compacted = state.ledger.compact_completed_years(remove_quarterly=True)
@@ -1449,12 +1461,22 @@ def index_upload_cmd(
     ),
     repo_id: str = typer.Option(DEFAULT_HF_REPO, "--repo-id", help="Hugging Face dataset repo ID."),
     token: Optional[str] = typer.Option(None, "--token", "-t", help="Hugging Face write token."),
+    tag: Optional[str] = typer.Option(
+        None,
+        "--tag",
+        help="Optional Git tag to attach on Hugging Face dataset (e.g. 'v0.1.0.dev3' or 'v0.1.0').",
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite existing Hugging Face tag if present."
+    ),
 ) -> None:
     """Uploads the local `{tier}/index/` folder to Hugging Face Hub."""
     from raxtik_etl.indexing import get_default_index_dir, upload_index_to_hf
 
     idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
-    url = upload_index_to_hf(index_root=idx_root, repo_id=repo_id, tier=tier, token=token)
+    url = upload_index_to_hf(
+        index_root=idx_root, repo_id=repo_id, tier=tier, token=token, tag=tag, force=force
+    )
     console.print(f"[bold green]✓ Published {tier} index to Hugging Face:[/bold green] {url}")
 
 

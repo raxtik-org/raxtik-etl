@@ -731,6 +731,8 @@ def upload_hf_index_folder(
     token: Optional[str] = None,
     enforce_optimistic_concurrency: bool = True,
     timeout: int = DEFAULT_HTTP_TIMEOUT,
+    tag: Optional[str] = None,
+    force: bool = False,
 ) -> str:
     """Publishes a local `{tier}/index/` folder to Hugging Face Hub in a single commit.
 
@@ -787,4 +789,11 @@ def upload_hf_index_folder(
             f"{local_manifest.active_snapshot.total_entities} entities)"
         ),
     )
-    return build_hf_resolve_url(repo_id, "main", remote_manifest_rel)
+    if tag:
+        tag_hf_dataset(
+            repo_id=repo_id,
+            tag=tag,
+            token=resolved_token,
+            force=force,
+        )
+    return build_hf_resolve_url(repo_id, tag or "main", remote_manifest_rel)
