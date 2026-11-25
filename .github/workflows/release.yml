@@ -62,11 +62,21 @@ jobs:
         with:
           skip-existing: true
 
+      - name: Read release notes from CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: changelog
+        uses: mindsers/changelog-reader-action@5ca6b859dbd794b56d53077cf5969269e676ec66 # v2.4.0
+        with:
+          path: ./CHANGELOG.md
+          validation_level: warn
+
       - name: Create or update GitHub Release with distribution assets
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
         with:
+          name: Release ${{ github.ref_name }}
           files: dist/*
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.changes }}
+          generate_release_notes: ${{ steps.changelog.outputs.changes == '' }}
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') || contains(github.ref, 'dev') }}

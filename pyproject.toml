@@ -72,6 +72,9 @@ Homepage = "https://github.com/raxtik-org/raxtik-etl"
 Documentation = "https://raxtik-etl.readthedocs.io"
 Repository = "https://github.com/raxtik-org/raxtik-etl"
 Issues = "https://github.com/raxtik-org/raxtik-etl/issues"
+Changelog = "https://github.com/raxtik-org/raxtik-etl/blob/main/CHANGELOG.md"
+Sponsor = "https://github.com/sponsors/prateek-dagar"
+Funding = "https://thanks.dev/u/gh/prateek-dagar"
 
 [project.scripts]
 raxtik-etl = "raxtik_etl.cli:app"
