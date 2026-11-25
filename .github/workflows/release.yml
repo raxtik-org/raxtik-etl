@@ -69,6 +69,7 @@ jobs:
         uses: mindsers/changelog-reader-action@5ca6b859dbd794b56d53077cf5969269e676ec66 # v2.4.0
         with:
           path: ./CHANGELOG.md
+          version: ${{ github.ref_name }}
           version_scheme: pep440
           validation_level: warn
 
