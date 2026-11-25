@@ -1218,7 +1218,7 @@ def index_build_cmd(
         for c in compacted:
             console.print(f"  [green]Compacted annual ledger:[/green] {c.name}")
 
-    manifest = state.build_from_ledgers()
+    manifest = state.build_from_ledgers(periods=periods)
     snap = manifest.active_snapshot
     console.print(
         Panel(
@@ -1358,7 +1358,10 @@ def index_verify_cmd(
         rebuilder = ShardedStateIndex(
             tmp_root, tier=active.tier, source=active.source, policy=active.policy
         )
-        rebuilt = rebuilder.build_from_ledgers(snapshot_label="verify")
+        rebuilt = rebuilder.build_from_ledgers(
+            snapshot_label="verify",
+            periods=active.active_snapshot.indexed_periods,
+        )
 
         active_base = [(idx_root / rel).as_posix() for rel in active.active_snapshot.shard_files]
         active_deltas = [

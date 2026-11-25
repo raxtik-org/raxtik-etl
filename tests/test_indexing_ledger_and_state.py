@@ -474,3 +474,27 @@ def test_null_and_empty_case_id_fallback(tmp_path: Path) -> None:
         assert rec is not None
         assert rec["latest_primary_id"] == pid
         assert rec["submissions_count"] == 1
+
+
+def test_build_periods_filter(tmp_path: Path) -> None:
+    """Passing `periods=['2004Q1']` must NOT pull in extra ledger files like `2024Q1.parquet`."""
+    bronze_dir = tmp_path / "bronze"
+    index_root = tmp_path / "silver" / "index"
+    state = ShardedStateIndex(
+        index_root, tier="silver", source="faers", policy=ResolutionPolicy(shard_count=4)
+    )
+
+    p_2004 = _create_bronze_duckdb(
+        bronze_dir / "faers_2004Q1.duckdb", [("101", "C1", 1, "20040101", None)]
+    )
+    p_2024 = _create_bronze_duckdb(
+        bronze_dir / "faers_2024Q1.duckdb", [("901", "C2", 1, "20240101", None)]
+    )
+    state.ledger.extract_period_ledger(p_2004, "2004Q1")
+    state.ledger.extract_period_ledger(p_2024, "2024Q1")
+
+    manifest = state.build_from_ledgers(periods=["2004Q1"])
+    assert manifest.active_snapshot.indexed_periods == ["2004Q1"]
+    assert manifest.active_snapshot.total_entities == 1
+    assert state.get_case_timeline("C1") is not None
+    assert state.get_case_timeline("C2") is None

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 import duckdb
 
@@ -217,6 +217,17 @@ class LedgerManager:
 
         return compacted
 
+    def get_period_ledger_path(self, data_period: str) -> Path:
+        """Returns the existing quarterly or annual ledger Parquet path containing `data_period`."""
+        period = normalize_quarter(data_period)
+        q_path = self.ledger_dir / f"{period}.parquet"
+        if q_path.exists():
+            return q_path
+        a_path = self.ledger_dir / f"{period[:4]}.parquet"
+        if a_path.exists():
+            return a_path
+        raise FileNotFoundError(f"No ledger file found for period {period} in {self.ledger_dir}")
+
     def list_ledger_files(self) -> List[Path]:
         """Returns sorted list of active ledger Parquet files (annual + quarterly)."""
         if not self.ledger_dir.exists():
@@ -228,12 +239,16 @@ class LedgerManager:
             and (QUARTERLY_LEDGER_RE.match(p.name) or ANNUAL_LEDGER_RE.match(p.name))
         )
 
-    def list_indexed_periods(self) -> List[str]:
-        """Reads distinct `data_period` identifiers present across all active ledger files."""
-        files = self.list_ledger_files()
+    def list_indexed_periods(self, ledger_files: Optional[Sequence[Path]] = None) -> List[str]:
+        """Reads distinct `data_period` identifiers present across active ledger files.
+
+        Pass `ledger_files` if already discovered to avoid scanning `ledger/` twice.
+        """
+        files = list(ledger_files) if ledger_files is not None else self.list_ledger_files()
         if not files:
             return []
         files_sql = ", ".join(f"'{f.as_posix()}'" for f in files)
+        # Ephemeral in-memory DuckDB connection used solely to read Parquet metadata/distinct periods
         con = duckdb.connect(":memory:")
         try:
             rows = con.execute(

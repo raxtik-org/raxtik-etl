@@ -88,6 +88,47 @@ def _resolution_tie_sql() -> str:
     )
 
 
+def _grouped_state_select_sql(
+    entries_relation: str,
+    policy: ResolutionPolicy,
+    where_clause: str = "",
+) -> str:
+    """Shared SQL aggregating ledger entries into resolved state rows (`timeline`, winner, `resolution_tie`)."""
+    order_sql = _order_by_sql(policy)
+    tie_sql = _resolution_tie_sql()
+    where_sql = f"WHERE {where_clause}" if where_clause else ""
+    return f"""
+        SELECT
+            case_id,
+            timeline[1].primary_id AS latest_primary_id,
+            timeline[1].quarter AS latest_quarter,
+            first_quarter,
+            len(timeline)::INTEGER AS submissions_count,
+            (first_quarter <> timeline[1].quarter) AS is_cross_quarter,
+            {tie_sql} AS resolution_tie,
+            timeline
+        FROM (
+            SELECT
+                case_id,
+                MIN(data_period) AS first_quarter,
+                LIST(
+                    STRUCT_PACK(
+                        quarter := data_period,
+                        version := canonical_case_version,
+                        primary_id := primary_id,
+                        fda_date := latest_regulatory_date,
+                        mfr_date := manufacturer_date
+                    )
+                    ORDER BY {order_sql}
+                ) AS timeline
+            FROM {entries_relation}
+            {where_sql}
+            GROUP BY case_id
+        ) AS grouped
+        ORDER BY case_id
+    """
+
+
 def _shard_filename(shard_idx: int, shard_count: int) -> str:
     width = max(2, len(str(shard_count - 1)))
     return f"shard_{shard_idx:0{width}d}.parquet"
@@ -97,7 +138,11 @@ def build_resolved_state_sql(
     base_shard_uris: Sequence[str],
     delta_uris: Sequence[str] = (),
 ) -> str:
-    """Returns a SQL SELECT resolving `base_shards + ordered deltas` (latest delta wins per case_id).
+    """Returns a lazy SQL SELECT resolving `base_shards + ordered deltas` (latest delta wins per case_id).
+
+    Note: This only returns a SQL query string — no Parquet data is loaded into memory here.
+    DuckDB's optimizer pushes column projections and WHERE filters down into `read_parquet()`
+    when callers query the view or subquery.
 
     Relies on the complete-state-per-case_id delta invariant.
     """
@@ -248,8 +293,18 @@ class ShardedStateIndex:
         self,
         snapshot_label: Optional[str] = None,
         period_fingerprints: Optional[Dict[str, str]] = None,
+        periods: Optional[Sequence[str]] = None,
     ) -> IndexManifest:
-        """Deterministically builds a fresh immutable base snapshot from all ledger files."""
+        """Deterministically builds a fresh immutable base snapshot from ledger files.
+
+        Args:
+            snapshot_label: Optional suffix for the snapshot ID (defaults to latest period).
+            period_fingerprints: Optional mapping of `period -> source SHA-256` to persist.
+            periods: Optional explicit list of quarters to include (e.g. `['2004Q1']`).
+                When provided, filters `WHERE data_period IN (...)` so extra ledger files
+                present in `ledger/` are never accidentally swept into the snapshot.
+                When `None`, builds from all periods present in `ledger/`.
+        """
         ledger_files = self.ledger.list_ledger_files()
         if not ledger_files:
             raise FileNotFoundError(
@@ -257,7 +312,22 @@ class ShardedStateIndex:
                 "Extract at least one period ledger first."
             )
 
-        indexed_periods = self.ledger.list_indexed_periods()
+        requested_periods = (
+            sorted({normalize_quarter(p) for p in periods}) if periods is not None else None
+        )
+        # Reuse already-discovered `ledger_files` instead of scanning `ledger/` twice
+        available_periods = self.ledger.list_indexed_periods(ledger_files=ledger_files)
+        indexed_periods = (
+            [p for p in available_periods if p in set(requested_periods)]
+            if requested_periods is not None
+            else available_periods
+        )
+        if not indexed_periods:
+            raise ValueError(
+                f"None of the requested periods ({requested_periods}) exist in {self.ledger.ledger_dir}."
+            )
+
+        # Load prior manifest (if any) to chain snapshot lineage, monotonic generation, and SHA-256 fingerprints
         prev_manifest = self.load_manifest()
         existing_history = prev_manifest.snapshot_history if prev_manifest else []
         parent_id = prev_manifest.active_snapshot_id if prev_manifest else None
@@ -268,7 +338,7 @@ class ShardedStateIndex:
         if period_fingerprints:
             merged_fingerprints.update(period_fingerprints)
 
-        label = snapshot_label or (indexed_periods[-1] if indexed_periods else "initial")
+        label = snapshot_label or indexed_periods[-1]
         snapshot_id = self._next_snapshot_id(label, existing_history)
 
         self.base_root.mkdir(parents=True, exist_ok=True)
@@ -278,13 +348,19 @@ class ShardedStateIndex:
         tmp_snap_dir.mkdir(parents=True, exist_ok=True)
 
         files_sql = ", ".join(f"'{p.as_posix()}'" for p in ledger_files)
-        order_sql = _order_by_sql(self.policy)
-        tie_sql = _resolution_tie_sql()
+        period_filter_sql = ""
+        if requested_periods is not None:
+            in_list = ", ".join(f"'{p}'" for p in requested_periods)
+            period_filter_sql = f"WHERE data_period IN ({in_list})"
+
         shard_expr = _shard_sql_expr("case_id", self.policy.shard_count)
         shard_filenames: List[str] = []
 
+        # Ephemeral in-memory DuckDB connection for vectorized Parquet -> shard transformation
         con = duckdb.connect(":memory:")
         try:
+            # Materialize deduplicated ledger rows + `_shard_id` ONCE so the 16-shard loop
+            # doesn't re-read and re-deduplicate every ledger Parquet file 16 separate times.
             con.execute(
                 f"""
                 CREATE TEMP TABLE _all_entries AS
@@ -305,6 +381,7 @@ class ShardedStateIndex:
                         latest_regulatory_date,
                         manufacturer_date
                     FROM read_parquet([{files_sql}])
+                    {period_filter_sql}
                 )
                 """  # nosec B608
             )
@@ -313,41 +390,11 @@ class ShardedStateIndex:
                 fname = _shard_filename(s_idx, self.policy.shard_count)
                 shard_filenames.append(fname)
                 out_file = tmp_snap_dir / fname
-
+                shard_sql = _grouped_state_select_sql(
+                    "_all_entries", self.policy, where_clause=f"_shard_id = {s_idx}"
+                )
                 con.execute(
-                    f"""
-                    COPY (
-                        WITH grouped AS (
-                            SELECT
-                                case_id,
-                                MIN(data_period) AS first_quarter,
-                                LIST(
-                                    STRUCT_PACK(
-                                        quarter := data_period,
-                                        version := canonical_case_version,
-                                        primary_id := primary_id,
-                                        fda_date := latest_regulatory_date,
-                                        mfr_date := manufacturer_date
-                                    )
-                                    ORDER BY {order_sql}
-                                ) AS timeline
-                            FROM _all_entries
-                            WHERE _shard_id = {s_idx}
-                            GROUP BY case_id
-                        )
-                        SELECT
-                            case_id,
-                            timeline[1].primary_id AS latest_primary_id,
-                            timeline[1].quarter AS latest_quarter,
-                            first_quarter,
-                            len(timeline)::INTEGER AS submissions_count,
-                            (first_quarter <> timeline[1].quarter) AS is_cross_quarter,
-                            {tie_sql} AS resolution_tie,
-                            timeline
-                        FROM grouped
-                        ORDER BY case_id
-                    ) TO '{out_file.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD);
-                    """  # nosec B608
+                    f"COPY ({shard_sql}) TO '{out_file.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD);"  # nosec B608
                 )
         except Exception:
             shutil.rmtree(tmp_snap_dir, ignore_errors=True)
@@ -357,6 +404,8 @@ class ShardedStateIndex:
 
         final_snap_dir = self.base_root / snapshot_id
         tmp_snap_dir.replace(final_snap_dir)
+        # Always store POSIX forward-slash relative paths in manifest.json (cross-platform + HF URLs;
+        # `Path(index_root) / rel_path` handles Windows backslashes automatically).
         rel_state_dir = f"state/base/{snapshot_id}"
         rel_shards = [f"{rel_state_dir}/{name}" for name in shard_filenames]
 
@@ -449,6 +498,94 @@ class ShardedStateIndex:
             existing_history=prev_manifest.snapshot_history,
         )
 
+    def _write_delta_segment(
+        self,
+        incoming_ledger: Path,
+        period: str,
+        prev_snap: SnapshotRecord,
+        snapshot_id: str,
+    ) -> str:
+        """Writes ONE immutable complete-state delta Parquet file for changed/new cases."""
+        self.deltas_root.mkdir(parents=True, exist_ok=True)
+        delta_filename = f"delta_{snapshot_id}.parquet"
+        delta_path = self.deltas_root / delta_filename
+        tmp_delta = self.deltas_root / f".tmp_{delta_filename}"
+        if tmp_delta.exists():
+            tmp_delta.unlink()
+
+        base_uris = [(self.index_root / rel).as_posix() for rel in prev_snap.shard_files]
+        prior_delta_uris = [
+            (self.index_root / rel).as_posix() for rel in prev_snap.active_delta_files
+        ]
+        current_state_sql = build_resolved_state_sql(base_uris, prior_delta_uris)
+        grouped_sql = _grouped_state_select_sql("combined_entries", self.policy)
+
+        con = duckdb.connect(":memory:")
+        try:
+            con.execute(
+                f"""
+                CREATE TEMP TABLE _incoming AS
+                SELECT
+                    case_id,
+                    primary_id,
+                    data_period,
+                    canonical_case_version,
+                    latest_regulatory_date,
+                    manufacturer_date
+                FROM read_parquet('{incoming_ledger.as_posix()}')
+                WHERE data_period = '{period}'
+                """  # nosec B608
+            )
+
+            con.execute(
+                f"""
+                COPY (
+                    WITH touched_ids AS (
+                        SELECT DISTINCT case_id FROM _incoming
+                    ),
+                    existing_touched AS (
+                        SELECT s.case_id, s.timeline
+                        FROM ({current_state_sql}) s
+                        INNER JOIN touched_ids t ON s.case_id = t.case_id
+                    ),
+                    existing_entries AS (
+                        SELECT
+                            e.case_id,
+                            entry.primary_id AS primary_id,
+                            entry.quarter AS data_period,
+                            entry.version AS canonical_case_version,
+                            entry.fda_date AS latest_regulatory_date,
+                            entry.mfr_date AS manufacturer_date
+                        FROM existing_touched e,
+                        UNNEST(e.timeline) AS u(entry)
+                    ),
+                    combined_entries AS (
+                        SELECT DISTINCT
+                            case_id,
+                            primary_id,
+                            data_period,
+                            canonical_case_version,
+                            latest_regulatory_date,
+                            manufacturer_date
+                        FROM (
+                            SELECT * FROM existing_entries
+                            UNION ALL
+                            SELECT * FROM _incoming
+                        )
+                    )
+                    {grouped_sql}
+                ) TO '{tmp_delta.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD);
+                """  # nosec B608
+            )
+        except Exception:
+            tmp_delta.unlink(missing_ok=True)
+            raise
+        finally:
+            con.close()
+
+        tmp_delta.replace(delta_path)
+        return f"state/deltas/{delta_filename}"
+
     def update_with_period(
         self,
         source_path: Path | str,
@@ -485,12 +622,15 @@ class ShardedStateIndex:
                     "Pass replace_period=True to explicitly reprocess this period."
                 )
 
-        # 1. Extract incoming period into append-only ledger
-        incoming_ledger = self.ledger.extract_period_ledger(
-            source_path=source_path,
-            data_period=period,
-            overwrite=replace_period,
-        )
+        # 1. Extract incoming period into append-only ledger (or reuse if already extracted on disk)
+        try:
+            incoming_ledger = self.ledger.extract_period_ledger(
+                source_path=source_path,
+                data_period=period,
+                overwrite=replace_period,
+            )
+        except FileExistsError:
+            incoming_ledger = self.ledger.get_period_ledger_path(period)
 
         # Bootstrap cleanly if no base snapshot exists yet
         if prev_manifest is None:
@@ -499,6 +639,7 @@ class ShardedStateIndex:
             return self.build_from_ledgers(
                 snapshot_label=period,
                 period_fingerprints={period: fingerprint},
+                periods=[period],
             )
 
         prev_snap = prev_manifest.active_snapshot
@@ -509,7 +650,6 @@ class ShardedStateIndex:
             )
 
         # Explicit replacement of a historical period cleanly rebuilds a fresh immutable base
-        # so removed cases (e.g. retracted records) are never left behind in older base shards.
         if replace_period:
             if compact_years:
                 self.ledger.compact_completed_years(remove_quarterly=True)
@@ -518,123 +658,18 @@ class ShardedStateIndex:
             return self.build_from_ledgers(
                 snapshot_label=f"{period}_replaced",
                 period_fingerprints=updated_fps,
+                periods=sorted(set(prev_snap.indexed_periods) | {period}),
             )
 
         # 2. Normal incremental update: write ONE complete-state delta segment (ZERO base rewrites!)
         snapshot_id = self._next_snapshot_id(period, prev_manifest.snapshot_history)
         generation = prev_manifest.generation + 1
-
-        self.deltas_root.mkdir(parents=True, exist_ok=True)
-        delta_filename = f"delta_{snapshot_id}.parquet"
-        delta_path = self.deltas_root / delta_filename
-        tmp_delta = self.deltas_root / f".tmp_{delta_filename}"
-        if tmp_delta.exists():
-            tmp_delta.unlink()
-
-        base_uris = [(self.index_root / rel).as_posix() for rel in prev_snap.shard_files]
-        prior_delta_uris = [
-            (self.index_root / rel).as_posix() for rel in prev_snap.active_delta_files
-        ]
-        current_state_sql = build_resolved_state_sql(base_uris, prior_delta_uris)
-        order_sql = _order_by_sql(self.policy)
-        tie_sql = _resolution_tie_sql()
-
-        con = duckdb.connect(":memory:")
-        try:
-            con.execute(
-                f"""
-                CREATE TEMP TABLE _incoming AS
-                SELECT
-                    case_id,
-                    primary_id,
-                    data_period,
-                    canonical_case_version,
-                    latest_regulatory_date,
-                    manufacturer_date
-                FROM read_parquet('{incoming_ledger.as_posix()}')
-                """  # nosec B608
-            )
-
-            # Resolve ONLY touched + brand-new case_ids into a complete-state delta Parquet
-            con.execute(
-                f"""
-                COPY (
-                    WITH touched_ids AS (
-                        SELECT DISTINCT case_id FROM _incoming
-                    ),
-                    existing_touched AS (
-                        SELECT s.case_id, s.timeline
-                        FROM ({current_state_sql}) s
-                        INNER JOIN touched_ids t ON s.case_id = t.case_id
-                    ),
-                    existing_entries AS (
-                        SELECT
-                            e.case_id,
-                            entry.primary_id AS primary_id,
-                            entry.quarter AS data_period,
-                            entry.version AS canonical_case_version,
-                            entry.fda_date AS latest_regulatory_date,
-                            entry.mfr_date AS manufacturer_date
-                        FROM existing_touched e,
-                        UNNEST(e.timeline) AS u(entry)
-                    ),
-                    combined_entries AS (
-                        SELECT DISTINCT
-                            case_id,
-                            primary_id,
-                            data_period,
-                            canonical_case_version,
-                            latest_regulatory_date,
-                            manufacturer_date
-                        FROM (
-                            SELECT * FROM existing_entries
-                            UNION ALL
-                            SELECT * FROM _incoming
-                        )
-                    ),
-                    grouped AS (
-                        SELECT
-                            case_id,
-                            MIN(data_period) AS first_quarter,
-                            LIST(
-                                STRUCT_PACK(
-                                    quarter := data_period,
-                                    version := canonical_case_version,
-                                    primary_id := primary_id,
-                                    fda_date := latest_regulatory_date,
-                                    mfr_date := manufacturer_date
-                                )
-                                ORDER BY {order_sql}
-                            ) AS timeline
-                        FROM combined_entries
-                        GROUP BY case_id
-                    )
-                    SELECT
-                        case_id,
-                        timeline[1].primary_id AS latest_primary_id,
-                        timeline[1].quarter AS latest_quarter,
-                        first_quarter,
-                        len(timeline)::INTEGER AS submissions_count,
-                        (first_quarter <> timeline[1].quarter) AS is_cross_quarter,
-                        {tie_sql} AS resolution_tie,
-                        timeline
-                    FROM grouped
-                    ORDER BY case_id
-                ) TO '{tmp_delta.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD);
-                """  # nosec B608
-            )
-        except Exception:
-            tmp_delta.unlink(missing_ok=True)
-            raise
-        finally:
-            con.close()
-
-        tmp_delta.replace(delta_path)
+        rel_delta = self._write_delta_segment(incoming_ledger, period, prev_snap, snapshot_id)
 
         if compact_years:
             self.ledger.compact_completed_years(remove_quarterly=True)
 
-        new_deltas = list(prev_snap.active_delta_files) + [f"state/deltas/{delta_filename}"]
+        new_deltas = list(prev_snap.active_delta_files) + [rel_delta]
         updated_fps = dict(prev_snap.period_fingerprints)
         updated_fps[period] = fingerprint
         indexed_periods = sorted(set(prev_snap.indexed_periods) | {period})

@@ -26,6 +26,37 @@ def _list_catalog_tables(con: duckdb.DuckDBPyConnection, catalog: str) -> Set[st
     return {str(r[0]) for r in rows}
 
 
+def _winning_records_select_sql(
+    state_source: str,
+    period: str,
+    as_of: Optional[str] = None,
+) -> str:
+    """Returns a SQL SELECT yielding `(case_id, winning_primary_id, winning_quarter)` for `period`."""
+    if as_of is None:
+        return (
+            "SELECT\n"
+            "    case_id,\n"
+            "    latest_primary_id AS winning_primary_id,\n"
+            "    latest_quarter AS winning_quarter\n"
+            f"FROM {state_source}\n"
+            f"WHERE latest_quarter = '{period}'"
+        )
+    return (
+        "WITH bounded AS (\n"
+        "    SELECT\n"
+        "        case_id,\n"
+        f"        list_filter(timeline, lambda x: x.quarter <= '{as_of}') AS tl\n"
+        f"    FROM {state_source}\n"
+        ")\n"
+        "SELECT\n"
+        "    case_id,\n"
+        "    tl[1].primary_id AS winning_primary_id,\n"
+        "    tl[1].quarter AS winning_quarter\n"
+        "FROM bounded\n"
+        f"WHERE len(tl) > 0 AND tl[1].quarter = '{period}'"
+    )
+
+
 def apply_tier_views(
     con: duckdb.DuckDBPyConnection,
     bronze_catalog: str,
@@ -58,37 +89,8 @@ def apply_tier_views(
     state_sql = build_resolved_state_sql(state_shard_uris, delta_uris)
     con.execute(f"CREATE OR REPLACE VIEW _index_state AS {state_sql};")  # nosec B608
 
-    if as_of is None:
-        con.execute(
-            f"""
-            CREATE OR REPLACE VIEW _winning_records AS
-            SELECT
-                case_id,
-                latest_primary_id AS winning_primary_id,
-                latest_quarter AS winning_quarter
-            FROM _index_state
-            WHERE latest_quarter = '{period}';
-            """  # nosec B608
-        )
-    else:
-        con.execute(
-            f"""
-            CREATE OR REPLACE VIEW _winning_records AS
-            WITH bounded AS (
-                SELECT
-                    case_id,
-                    list_filter(timeline, lambda x: x.quarter <= '{as_of}') AS tl
-                FROM _index_state
-            )
-            SELECT
-                case_id,
-                tl[1].primary_id AS winning_primary_id,
-                tl[1].quarter AS winning_quarter
-            FROM bounded
-            WHERE len(tl) > 0
-              AND tl[1].quarter = '{period}';
-            """  # nosec B608
-        )
+    winners_sql = _winning_records_select_sql("_index_state", period, as_of)
+    con.execute(f"CREATE OR REPLACE VIEW _winning_records AS {winners_sql};")  # nosec B608
 
     existing_tables = _list_catalog_tables(con, bronze_catalog)
     src_tbl = pol.source_table
@@ -201,28 +203,8 @@ def materialize_filtered_package(
         as_of = normalize_quarter(as_of_period) if as_of_period else None
         rk = pol.record_key
 
-        if as_of is None:
-            con.execute(
-                f"""
-                CREATE TEMP TABLE _winners AS
-                SELECT latest_primary_id AS winning_primary_id
-                FROM ({state_sql})
-                WHERE latest_quarter = '{period}';
-                """  # nosec B608
-            )
-        else:
-            con.execute(
-                f"""
-                CREATE TEMP TABLE _winners AS
-                WITH bounded AS (
-                    SELECT list_filter(timeline, lambda x: x.quarter <= '{as_of}') AS tl
-                    FROM ({state_sql})
-                )
-                SELECT tl[1].primary_id AS winning_primary_id
-                FROM bounded
-                WHERE len(tl) > 0 AND tl[1].quarter = '{period}';
-                """  # nosec B608
-            )
+        winners_sql = _winning_records_select_sql(f"({state_sql})", period, as_of)
+        con.execute(f"CREATE TEMP TABLE _winners AS {winners_sql};")  # nosec B608
 
         # Materialize filtered demo + cases
         if pol.source_table in existing_tables:
