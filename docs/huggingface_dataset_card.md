@@ -26,7 +26,6 @@ size_categories:
 
 [![Documentation](https://img.shields.io/readthedocs/raxtik-etl)](https://raxtik-etl.readthedocs.io/en/latest/)
 [![License: ODC-By 1.0](https://img.shields.io/badge/License-ODC--By_1.0-blue.svg)](https://opendatacommons.org/licenses/by/1-0/)
-[![Engine: raxtik-etl](https://img.shields.io/pypi/v/raxtik-etl?include_prereleases&label=raxtik-etl)](https://pypi.org/project/raxtik-etl/)
 [![Latest Release](https://img.shields.io/github/v/release/raxtik-org/raxtik-etl?include_prereleases&label=Release)](https://github.com/raxtik-org/raxtik-etl/releases)
 
 High-performance, standardized, and self-describing pharmacovigilance (PV) surveillance data compiled from official United States Food and Drug Administration (FDA) adverse event reporting systems (**AERS / FAERS**).
