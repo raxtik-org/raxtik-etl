@@ -1,23 +1,26 @@
-.PHONY: install test lint format sample-run clean
+.PHONY: install test lint typecheck quality format docs clean
 
 install:
-	uv pip install -e ".[dev]"
+	uv sync --all-extras --dev
 
 test:
-	pytest -v --cov=raxtik_etl tests/
+	uv run pytest -v --cov=raxtik_etl tests/
 
 lint:
-	ruff check .
+	uv run ruff check src/ tests/
+	uv run ruff format --check src/ tests/
+
+typecheck:
+	uv run pyrefly check src/
+
+quality: lint typecheck
 
 format:
-	ruff format .
-	ruff check --fix .
-
-sample-run:
-	raxtik-etl pipeline --sample --output-dir data/output
+	uv run ruff format src/ tests/
+	uv run ruff check --fix src/ tests/
 
 docs:
-	tox run -e docs
+	uvx --with tox-uv tox run -e docs
 
 clean:
-	rm -rf .pytest_cache htmlcov .coverage dist build *.egg-info .ruff_cache docs/_build .tox
+	rm -rf .pytest_cache htmlcov .coverage coverage.xml dist build *.egg-info .ruff_cache docs/_build .tox
