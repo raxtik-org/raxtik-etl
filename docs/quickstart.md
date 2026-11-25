@@ -59,6 +59,35 @@ with FAERS.from_hf("2024Q1", remote=True) as faers:
     reactions_df = faers.reactions(limit=100)
 ```
 
+### Silver Tier: Cross-Quarter Deduplication & Case Timelines
+
+The **Silver Tier** resolves cases across all 91 quarters (`2004Q1..2026Q3`) using a compact 16-shard Parquet index (`silver/index/`), without duplicating Bronze tables:
+
+```python
+from raxtik_etl import FAERS
+
+# 1. Remote Silver Query (Zero Local Disk): Streams both Bronze data & Silver index over HTTPS
+with FAERS.from_hf(
+    "2024Q1",
+    tier="silver",
+    remote=True,
+    as_of_period="2025Q4",  # Optional point-in-time cutoff
+) as faers:
+    # Only cases whose authoritative winning report belongs to 2024Q1 (as of 2025Q4)
+    cases_df = faers.cases(limit=100)
+    drugs_df = faers.drugs(limit=100)
+
+    # Full multi-quarter version history for any case_id
+    cid = str(cases_df["case_id"][0])
+    timeline = faers.case_timeline(cid)
+    print(timeline)
+
+# 2. Cache the lightweight Silver index locally for millisecond repeated queries
+with FAERS.from_hf("2024Q1", tier="silver", cache_index=True) as faers:
+    # Export a standalone filtered Silver DuckDB package
+    faers.materialize_tier("data/output/faers_2024Q1_silver.duckdb")
+```
+
 ### Direct Remote SQL via DuckDB
 
 You can also run ad-hoc SQL directly over remote packages using DuckDB's built-in `httpfs` extension:
@@ -131,6 +160,26 @@ raxtik-etl build \
 ```bash
 # Inspect a compiled quarterly package
 raxtik-etl inspect -d 2004Q1
+```
+
+### Silver Tier Index Management (`raxtik-etl index`)
+
+```bash
+# Build a fresh Silver index across a range (auto-downloads Bronze & cleans up after extraction)
+raxtik-etl index build --source faers --tier silver --start 2004Q1 --end 2026Q3 --cleanup-bronze
+
+# Incrementally update the index with a new quarter (writes 1 delta file, zero base shard rewrites)
+raxtik-etl index update --data-period 2026Q4 --source faers --tier silver
+
+# Verify logical equivalence against a full ledger rebuild (shard-by-shard EXCEPT ALL)
+raxtik-etl index verify --source faers --tier silver
+
+# Inspect the full multi-quarter timeline of a specific case
+raxtik-etl index lookup --case-id 12345678 --source faers --tier silver
+
+# Publish silver/index/ to Hugging Face Hub with optimistic concurrency & tagging
+export HF_TOKEN="hf_..."
+raxtik-etl index upload --source faers --tier silver --tag v0.1.0
 ```
 
 ### Cross-Period Case Deduplication & Consolidation

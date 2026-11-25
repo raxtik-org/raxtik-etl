@@ -1399,9 +1399,9 @@ def index_verify_cmd(
                 diff_row = con.execute(
                     f"""
                     SELECT COUNT(*) FROM (
-                        (({shard_a_sql}) EXCEPT ({shard_r_sql}))
+                        (({shard_a_sql}) EXCEPT ALL ({shard_r_sql}))
                         UNION ALL
-                        (({shard_r_sql}) EXCEPT ({shard_a_sql}))
+                        (({shard_r_sql}) EXCEPT ALL ({shard_a_sql}))
                     )
                     """  # nosec B608
                 ).fetchone()

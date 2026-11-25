@@ -44,10 +44,11 @@ Every source connector projects raw records into an analytical star-schema archi
 
 ## 🌐 Precompiled Dataset on Hugging Face
 
-All **91 quarterly packages** from **2004Q1 through 2026Q3** (20+ million safety reports) are compiled and publicly accessible on Hugging Face:
+All quarterly Bronze packages (**2004Q1–present**, 25M+ safety reports) and the verified **Silver Tier Deduplication Index** (21M+ unique cases, live counts in [`silver/index/manifest.json`](https://huggingface.co/datasets/raxtik-org/faers-safety-database/blob/main/silver/index/manifest.json)) are publicly accessible on Hugging Face:
 🔗 **[raxtik-org/faers-safety-database](https://huggingface.co/datasets/raxtik-org/faers-safety-database)**
 
-Organized under `bronze/<YEAR>/` as standalone DuckDB databases (`.duckdb`) and ZSTD Parquet tables (`.parquet/`).
+- **Bronze Tier (`bronze/<YEAR>/`)**: Standalone DuckDB databases (`.duckdb`) and ZSTD Parquet tables (`.parquet/`).
+- **Silver Tier (`silver/index/`)**: Append-only ledgers (`ledger/`), 16-shard immutable base snapshots (`state/base/`), complete-state deltas (`state/deltas/`), and active `manifest.json`.
 
 ---
 
@@ -102,6 +103,12 @@ with FAERS.from_hf("2024Q1") as faers:
 with FAERS.from_hf("2024Q1", remote=True) as faers:
     cases_df = faers.cases(limit=100)
     print(cases_df)
+
+# 3. Silver Tier (Cross-Quarter Deduplication + Case Timeline + Point-in-Time)
+with FAERS.from_hf("2024Q1", tier="silver", remote=True, as_of_period="2025Q4") as faers:
+    cases_df = faers.cases(limit=100)
+    timeline = faers.case_timeline(str(cases_df["case_id"][0]))
+    print(timeline)
 ```
 
 ---

@@ -26,47 +26,72 @@ size_categories:
 
 [![Documentation](https://img.shields.io/readthedocs/raxtik-etl)](https://raxtik-etl.readthedocs.io/en/latest/)
 [![License: ODC-By 1.0](https://img.shields.io/badge/License-ODC--By_1.0-blue.svg)](https://opendatacommons.org/licenses/by/1-0/)
-[![Engine: raxtik-etl](https://img.shields.io/badge/Engine-raxtik--etl-informational.svg)](https://github.com/raxtik-org/raxtik-etl)
-[![Release Tag: v0.1.0.dev1](https://img.shields.io/badge/Release-v0.1.0.dev1-orange.svg)](https://huggingface.co/datasets/raxtik-org/faers-safety-database/tree/v0.1.0.dev1)
+[![Engine: raxtik-etl](https://img.shields.io/pypi/v/raxtik-etl?include_prereleases&label=raxtik-etl)](https://pypi.org/project/raxtik-etl/)
+[![Latest Release](https://img.shields.io/github/v/release/raxtik-org/raxtik-etl?include_prereleases&label=Release)](https://github.com/raxtik-org/raxtik-etl/releases)
 
 High-performance, standardized, and self-describing pharmacovigilance (PV) surveillance data compiled from official United States Food and Drug Administration (FDA) adverse event reporting systems (**AERS / FAERS**).
 
-Covering **91 consecutive quarters** from **2004Q1 through 2026Q3**, this database encapsulates over **20+ million patient case reports** spanning 22 years of post-marketing drug safety surveillance.
+Covering **91 consecutive quarters** from **2004Q1 through 2026Q3** (22.75 years), this repository hosts **25,233,828** canonical submissions resolved into **21,054,158** unique cases via the **Silver Tier Deduplication Index**.
 
 > 📖 **Official Documentation**: Comprehensive guides, canonical schema specifications, and tutorials are available at **[raxtik-etl.readthedocs.io](https://raxtik-etl.readthedocs.io/en/latest/)**. For step-by-step examples, see the **[Quickstart Guide](https://raxtik-etl.readthedocs.io/en/latest/quickstart.html)**.
 
 ---
 
+## ✅ Verified 91-Quarter Silver Deduplication Summary (`2004Q1` – `2026Q3`)
+
+Independently audited against `silver/index/` (`snap_2026Q3`) with **0 orphan state rows**, **0 missing entities**, and **0 winner mismatches** against an independent `QUALIFY ROW_NUMBER()` reference resolver:
+
+| Metric | Verified Count | Notes |
+|---|---:|---|
+| **Indexed Quarters** | **91** | `2004Q1` through `2026Q3` (22.75 years) |
+| **Total Raw Submissions (`demo`)** | **25,233,828** | `25,228,427` distinct `primary_id`s (`5,401` republished `primary_id` rows) |
+| **Unique Resolved Cases (Silver)** | **21,054,158** | `100%` real FDA `CASEID`s (`0` fallback keys) |
+| **Additional / Superseded Reports Resolved** | **4,179,670** | **16.56%** of all submissions |
+| **Multi-Period Cases (`MIN != MAX` quarter)** | **2,644,931** | **2,643,292** distinct-report follow-ups + **1,639** republished-only cases |
+| **Silver Index Footprint** | **441 MiB** | `127 MiB` append-only ledgers + `315 MiB` across 16 balanced shards |
+
+---
+
 ## 🏗️ Partition Layout & File Hierarchy
 
-All quarterly releases are organized under the **Bronze Tier** (`bronze/<YEAR>/`) in dual presentation formats:
-- **Standalone DuckDB (`.duckdb`)**: Fully indexed analytical database containing all 7 fact tables, authoritative deduplicated `cases` view, embedded metadata (`_metadata`), and 16 reference dimension codelists (`_code_*`).
-- **Apache Parquet (`.parquet/`)**: ZSTD-compressed columnar tables partitioned by clinical entity for distributed ML pipelines and instant remote HTTP streaming.
+- **Bronze Tier (`bronze/<YEAR>/`)**: Immutable quarterly packages in dual formats:
+  - **Standalone DuckDB (`.duckdb`)**: All 7 fact tables, single-quarter `cases` view, `_metadata`, and 16 `_code_*` reference codelists.
+  - **Apache Parquet (`.parquet/`)**: ZSTD-compressed columnar tables for distributed ML pipelines and remote HTTP scanning.
+- **Silver Tier (`silver/index/`)**: Derived cross-quarter deduplication index:
+  - `manifest.json`: Mutable active pointer referencing the active snapshot, generation, and period fingerprints.
+  - `ledger/`: Append-only annual (`2004.parquet..2025.parquet`) and quarterly (`2026Q1..2026Q3.parquet`) submission ledgers.
+  - `state/base/<snapshot_id>/`: 16 immutable `md5_u32` Parquet shards storing winning submissions and full case timelines.
+  - `snapshots/`: Immutable snapshot metadata records.
 
 ```text
 raxtik-org/faers-safety-database/
-└── bronze/
-    ├── 2004/
-    │   ├── faers_2004Q1.duckdb
-    │   ├── faers_2004Q1.parquet/
-    │   │   ├── demo.parquet
-    │   │   ├── drug.parquet
-    │   │   ├── reac.parquet
-    │   │   ├── outc.parquet
-    │   │   ├── indi.parquet
-    │   │   ├── ther.parquet
-    │   │   └── rpsr.parquet
-    │   ├── faers_2004Q2.duckdb
-    │   └── faers_2004Q2.parquet/
-    │       └── ...
-    ├── ...
-    └── 2026/
-        ├── faers_2026Q1.duckdb
-        ├── faers_2026Q1.parquet/
-        ├── faers_2026Q2.duckdb
-        ├── faers_2026Q2.parquet/
-        ├── faers_2026Q3.duckdb
-        └── faers_2026Q3.parquet/
+├── bronze/
+│   ├── 2004/
+│   │   ├── faers_2004Q1.duckdb
+│   │   └── faers_2004Q1.parquet/
+│   │       ├── demo.parquet
+│   │       ├── drug.parquet
+│   │       ├── reac.parquet
+│   │       ├── outc.parquet
+│   │       ├── indi.parquet
+│   │       ├── ther.parquet
+│   │       └── rpsr.parquet
+│   ├── ...
+│   └── 2026/
+│       ├── faers_2026Q3.duckdb
+│       └── faers_2026Q3.parquet/
+└── silver/
+    └── index/
+        ├── manifest.json
+        ├── ledger/
+        │   ├── 2004.parquet ... 2025.parquet
+        │   └── 2026Q1.parquet ... 2026Q3.parquet
+        ├── snapshots/
+        │   └── snap_2026Q3.json
+        └── state/
+            └── base/
+                └── snap_2026Q3/
+                    └── shard_00.parquet ... shard_15.parquet
 ```
 
 ---
@@ -155,6 +180,12 @@ with FAERS.from_hf("2024Q1") as faers:
 with FAERS.from_hf("2024Q1", remote=True) as faers:
     cases_df = faers.cases(limit=100)
     print(cases_df)
+
+# 3. Silver Tier (Cross-Quarter Deduplication + Case Timeline + Point-in-Time)
+with FAERS.from_hf("2024Q1", tier="silver", remote=True, as_of_period="2025Q4") as faers:
+    cases_df = faers.cases(limit=100)
+    timeline = faers.case_timeline(str(cases_df["case_id"][0]))
+    print(timeline)
 ```
 
 ---

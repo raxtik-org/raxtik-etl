@@ -13,6 +13,7 @@ The `raxtik-etl` CLI offers tools for compiling quarterly archives, performing c
 | [`upload`](#upload) | Uploads compiled DuckDB and Parquet packages to Hugging Face Hub (maintainers / custom repos). |
 | [`inspect`](#inspect) | Displays metadata, schema signatures, and data quality indicators for packages or consolidated databases. |
 | [`consolidate`](#consolidate) | Executes cross-quarter case deduplication and consolidates quarterly packages into a unified dataset. |
+| [`index`](#index) | Builds, incrementally updates, compacts, verifies, queries, and publishes the Silver Tier derived deduplication index. |
 | [`sources`](#sources) | Lists registered source connector plugins discovered via Python entry points (`raxtik_etl.sources`). |
 
 ---
@@ -142,6 +143,38 @@ Options:
   -n, --output-name<str>   Output database base name [default: faers_2004_2006_consolidated].
   -o, --output-dir <path>  Destination directory [default: ~/.cache/raxtik/packages].
   --help                   Show help and exit.
+```
+
+---
+
+### `index`
+
+Manages the tier-agnostic derived deduplication index (`silver/index/`) built from immutable Bronze packages.
+
+| Subcommand | Description |
+|---|---|
+| `raxtik-etl index build` | Deterministically builds a fresh immutable base snapshot across a range (`--start`, `--end`, optional `--cleanup-bronze`, `--overwrite`, `--shards`). |
+| `raxtik-etl index update` | Incrementally ingests a single `--data-period` as a complete-state delta (idempotent via SHA-256 fingerprint; auto-compacts at 4 deltas; `--replace-period` to reprocess historical quarters). |
+| `raxtik-etl index compact` | Compacts completed annual ledgers (`YYYY.parquet`) and merges active deltas into a fresh immutable base snapshot. |
+| `raxtik-etl index verify` | Rebuilds canonical state from ledgers and verifies bit-for-bit logical equality shard-by-shard (`EXCEPT ALL`). |
+| `raxtik-etl index lookup` | Prints the full multi-quarter submission timeline and winning report for `--case-id`. |
+| `raxtik-etl index upload` | Publishes `{tier}/index/` to Hugging Face Hub in a single commit with optimistic concurrency checking and optional `--tag` / `--force`. |
+
+**Examples:**
+```bash
+# Build full 91-quarter Silver index with automatic Bronze cleanup
+raxtik-etl index build --source faers --tier silver --start 2004Q1 --end 2026Q3 --cleanup-bronze
+
+# Incrementally add a new quarter
+raxtik-etl index update --data-period 2026Q4 --source faers --tier silver
+
+# Verify integrity & look up a case timeline
+raxtik-etl index verify --source faers --tier silver
+raxtik-etl index lookup --case-id 12345678 --source faers --tier silver
+
+# Publish to Hugging Face Hub and attach a release tag
+export HF_TOKEN="hf_..."
+raxtik-etl index upload --source faers --tier silver --tag v0.1.0
 ```
 
 ---

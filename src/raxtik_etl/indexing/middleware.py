@@ -68,8 +68,9 @@ def apply_tier_views(
 ) -> None:
     """Registers zero-copy tier-filtered views inside `con`'s writable default catalog.
 
-    Assumes the Bronze DuckDB package is already ATTACHead under `bronze_catalog`
+    Assumes the Bronze DuckDB package is already attached under `bronze_catalog`
     (READ_ONLY). Creates:
+
     - `_index_state`: view over resolved `base_shards + ordered deltas` (local or HTTPS).
     - `_winning_records`: winning `(case_id, winning_primary_id, winning_quarter)`
       for `data_period` (optionally bounded by `as_of_period`).

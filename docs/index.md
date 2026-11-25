@@ -55,9 +55,9 @@ changelog
 - **Decoupled Architecture**: Source-agnostic canonical data engine separated from source-specific connectors (`raxtik-source-faers`).
 - **Canonical Schemas**: 7 normalized entities (`demo`, `drug`, `reac`, `outc`, `indi`, `ther`, `rpsr`) preserving original verbatim values.
 - **Dual Presentation Packaging**: Produces self-describing standalone DuckDB databases and ZSTD-compressed Apache Parquet directories.
-- **Deterministic Case Deduplication**: Resolves multi-version follow-up submissions across quarters while retaining raw historical submissions.
-- **Zero-Copy Python Client**: Query cases, suspect drugs, and reactions directly as Polars DataFrames using `Dataset`.
-- **Hugging Face Hub Streaming**: Zero-auth public downloads of precompiled packages directly to user cache.
+- **Deterministic Case Deduplication (Silver Tier)**: Resolves multi-version follow-up submissions across all quarterly releases (`2004Q1–present`) via a compact 16-shard Parquet index while preserving immutable Bronze submissions and full case timelines.
+- **Zero-Copy Python Client**: Query cases, suspect drugs, reactions, and case timelines directly as Polars DataFrames using `Dataset` / `FAERS` (including `as_of_period` point-in-time resolution).
+- **Hugging Face Hub Streaming**: Zero-auth local caching or zero-disk remote HTTPS querying for both Bronze packages and the Silver deduplication index.
 
 ---
 

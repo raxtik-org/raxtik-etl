@@ -24,6 +24,34 @@ This page provides the API reference for the `raxtik_etl` Python package.
    :show-inheritance:
 ```
 
+## Silver Tier Indexing Engine
+
+### `raxtik_etl.indexing.ledger`
+
+```{eval-rst}
+.. automodule:: raxtik_etl.indexing.ledger
+   :members:
+   :show-inheritance:
+```
+
+### `raxtik_etl.indexing.state`
+
+```{eval-rst}
+.. automodule:: raxtik_etl.indexing.state
+   :members:
+   :show-inheritance:
+```
+
+### `raxtik_etl.indexing.middleware`
+
+```{eval-rst}
+.. automodule:: raxtik_etl.indexing.middleware
+   :members:
+   :show-inheritance:
+```
+
+---
+
 ## Consolidation & Deduplication Engine
 
 ### `raxtik_etl.consolidation.merger`

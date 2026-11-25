@@ -1,10 +1,12 @@
 """Hybrid Base + Immutable Delta Segment State Index & Incremental Resolution Engine.
 
-Implements Option C (Iceberg-inspired Base Snapshots + LSM-inspired Delta Segments):
+Hybrid immutable sharded base snapshots with append-only delta segments::
+
     <index_root>/state/base/<snapshot_id>/shard_00..NN.parquet
     <index_root>/state/deltas/delta_<snapshot_id>.parquet
 
 Core invariants:
+
 1. Existing published files are NEVER overwritten in place (strict immutability).
 2. Complete-state-per-case_id delta invariant: every row in a delta segment holds
    the COMPLETE resolved state (including full `timeline` and `resolution_tie`)
@@ -600,6 +602,7 @@ class ShardedStateIndex:
         """Incrementally updates the index with a single incoming period using a delta segment.
 
         Invariants:
+
         - Idempotent: if `data_period` is already indexed with the same source fingerprint
           (and `replace_period=False`), returns the existing manifest without writing a new
           delta or incrementing `generation`.
