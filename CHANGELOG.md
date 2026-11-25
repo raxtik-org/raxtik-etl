@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.0.dev3 - 2026-11-25
+
+**Full Changelog**: https://github.com/raxtik-org/raxtik-etl/compare/v0.1.0.dev2...v0.1.0.dev3
+
+### Added
+- **Silver Tier Derived Deduplication Index (`raxtik_etl.indexing`)**: tier-agnostic append-only quarterly/annual ledgers, deterministic 16-shard hybrid base + delta state snapshots (`md5_u32` partitioning), automatic delta compaction, and SHA-256 period fingerprinting for idempotent re-runs.
+- **Silver Query Middleware & SDK**: `tier="silver"` support in `BaseDataset` / `Dataset.from_hf()` (local, cached, and `remote=True`), `as_of_period` point-in-time queries, `case_timeline()`, and `materialize_tier()` for exporting filtered DuckDB packages.
+- **Index CLI (`raxtik-etl index`)**: `build` (with `--cleanup-bronze`), `update`, `compact`, `verify` (full-rebuild bit-for-bit integrity check), `lookup`, and `upload` (with optimistic concurrency check and `--tag` / `--force` Hugging Face tagging).
+- Experimental free-threaded Python `3.14t` CI job on Ubuntu and expanded test coverage (71%).
+
+### Fixed
+- Preserved `NULL` / blank `CASEID` submissions via deterministic `REPORT:<primary_id>` fallback instead of dropping rows.
+- Added `data_period DESC` total-order tie-breaker for cross-quarter republished `primary_id` records.
+- Updated DuckDB `list_filter` expressions to DuckDB 2.0+ `lambda x:` syntax.
+- Hardened `package_format_version` validation (`1.x`), raised `NotImplementedError` on `verify_checksum()` in remote mode, and fixed `_metadata` column insertion during materialization.
+
 ## 0.1.0.dev2 - 2026-11-19
 
 **Full Changelog**: https://github.com/raxtik-org/raxtik-etl/compare/v0.1.0.dev1...v0.1.0.dev2
