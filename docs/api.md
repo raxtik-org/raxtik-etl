@@ -26,6 +26,14 @@ This page provides the API reference for the `raxtik_etl` Python package.
 
 ## Silver Tier Indexing Engine
 
+### `raxtik_etl.indexing.models`
+
+```{eval-rst}
+.. automodule:: raxtik_etl.indexing.models
+   :members:
+   :show-inheritance:
+```
+
 ### `raxtik_etl.indexing.ledger`
 
 ```{eval-rst}
