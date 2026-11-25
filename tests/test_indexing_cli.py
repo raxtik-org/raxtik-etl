@@ -139,3 +139,110 @@ def test_cli_index_build_update_verify_and_lookup(tmp_path: Path) -> None:
     assert "180" in res_lookup.output
     assert "150" in res_lookup.output
     assert "101" in res_lookup.output
+
+    # 5. `index lookup` for an unknown case exits non-zero
+    res_missing = runner.invoke(
+        app,
+        [
+            "index",
+            "lookup",
+            "--case-id",
+            "DOES_NOT_EXIST",
+            "--source",
+            "faers",
+            "--tier",
+            "silver",
+            "--index-dir",
+            idx_dir.as_posix(),
+        ],
+    )
+    assert res_missing.exit_code != 0
+
+    # 6. `index compact` compacts active deltas cleanly
+    res_compact = runner.invoke(
+        app,
+        [
+            "index",
+            "compact",
+            "--source",
+            "faers",
+            "--tier",
+            "silver",
+            "--index-dir",
+            idx_dir.as_posix(),
+        ],
+    )
+    assert res_compact.exit_code == 0, res_compact.output
+
+
+def test_cli_cleanup_bronze_and_upload(tmp_path: Path, monkeypatch: object) -> None:
+    import pytest
+
+    mp = monkeypatch
+    assert isinstance(mp, pytest.MonkeyPatch)
+
+    pkg_dir = tmp_path / "packages"
+    idx_dir = tmp_path / "silver_index"
+    pkg_file = _create_bronze_pkg(
+        pkg_dir / "faers_2004Q1.duckdb",
+        [("101", "C99", 1, "20040115", None)],
+    )
+    assert pkg_file.exists()
+
+    res_build = runner.invoke(
+        app,
+        [
+            "index",
+            "build",
+            "--source",
+            "faers",
+            "--tier",
+            "silver",
+            "--start",
+            "2004Q1",
+            "--end",
+            "2004Q1",
+            "--package-dir",
+            pkg_dir.as_posix(),
+            "--index-dir",
+            idx_dir.as_posix(),
+            "--shards",
+            "2",
+            "--cleanup-bronze",
+        ],
+    )
+    assert res_build.exit_code == 0, res_build.output
+    assert not pkg_file.exists(), "--cleanup-bronze should delete Bronze package after extraction"
+
+    captured: dict[str, object] = {}
+
+    def _fake_upload(**kwargs: object) -> str:
+        captured.update(kwargs)
+        return "https://huggingface.co/datasets/org/repo/resolve/v0.1.0/silver/index/manifest.json"
+
+    mp.setattr("raxtik_etl.indexing.upload_index_to_hf", _fake_upload)
+
+    res_upload = runner.invoke(
+        app,
+        [
+            "index",
+            "upload",
+            "--source",
+            "faers",
+            "--tier",
+            "silver",
+            "--index-dir",
+            idx_dir.as_posix(),
+            "--repo-id",
+            "org/repo",
+            "--token",
+            "fake_tok",
+            "--tag",
+            "v0.1.0",
+            "--force",
+        ],
+    )
+    assert res_upload.exit_code == 0, res_upload.output
+    assert captured["tag"] == "v0.1.0"
+    assert captured["force"] is True
+    assert captured["repo_id"] == "org/repo"
