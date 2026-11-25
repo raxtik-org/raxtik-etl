@@ -156,8 +156,8 @@ def test_incremental_updates_preserve_full_timeline_and_snapshots(tmp_path: Path
     assert m4.active_snapshot.total_entities == 3
     assert m4.active_snapshot.total_submissions == 7
     assert (
-        m4.active_snapshot.cross_period_entities == 1
-    )  # Only C99 (C_LATE won in its first quarter 2005Q2)
+        m4.active_snapshot.cross_period_entities == 2
+    )  # C99 (2004Q1..2006Q2) and C_LATE (2005Q2 & 2005Q4)
 
     # Verify full timeline preservation for C99 (all 4 quarters including in-between!)
     c99 = state.get_case_timeline("C99")
@@ -498,3 +498,58 @@ def test_build_periods_filter(tmp_path: Path) -> None:
     assert manifest.active_snapshot.total_entities == 1
     assert state.get_case_timeline("C1") is not None
     assert state.get_case_timeline("C2") is None
+
+
+def test_replace_compacted_quarter(tmp_path: Path) -> None:
+    """Replacing a quarter after YYYY.parquet compaction purges stale rows cleanly."""
+    bronze = tmp_path / "bronze"
+    policy = ResolutionPolicy(shard_count=4)
+    state = ShardedStateIndex(tmp_path / "idx", tier="silver", source="faers", policy=policy)
+
+    pkgs = {
+        "2024Q1": _create_bronze_duckdb(bronze / "q1.duckdb", [("101", "C1", 1, "20240115", None)]),
+        "2024Q2": _create_bronze_duckdb(
+            bronze / "q2.duckdb",
+            [("201", "C1", 2, "20240415", None), ("202", "C_STALE", 1, "20240415", None)],
+        ),
+        "2024Q3": _create_bronze_duckdb(bronze / "q3.duckdb", [("301", "C3", 1, "20240715", None)]),
+        "2024Q4": _create_bronze_duckdb(bronze / "q4.duckdb", [("401", "C4", 1, "20241015", None)]),
+    }
+    for period, pkg in pkgs.items():
+        state.update_with_period(pkg, period, compact_years=True)
+
+    assert (state.ledger.ledger_dir / "2024.parquet").exists()
+    assert not (state.ledger.ledger_dir / "2024Q2.parquet").exists()
+
+    pkgs["2024Q2"] = _create_bronze_duckdb(
+        bronze / "q2_new.duckdb", [("299", "C1", 2, "20240420", None)]
+    )
+    replaced = state.update_with_period(pkgs["2024Q2"], "2024Q2", replace_period=True)
+
+    assert not (state.ledger.ledger_dir / "2024Q2.parquet").exists()
+    assert state.get_case_timeline("C_STALE") is None
+    c1 = state.get_case_timeline("C1")
+    assert c1 is not None and [e["primary_id"] for e in c1["timeline"]] == ["299", "101"]
+
+    clean = ShardedStateIndex(tmp_path / "clean", tier="silver", source="faers", policy=policy)
+    for period, pkg in pkgs.items():
+        clean.ledger.extract_period_ledger(pkg, period)
+    m_clean = clean.build_from_ledgers()
+    assert replaced.active_snapshot.total_entities == m_clean.active_snapshot.total_entities == 3
+    assert c1 == clean.get_case_timeline("C1")
+
+
+def test_republished_primary_id(tmp_path: Path) -> None:
+    """Identical primary_id republished across quarters resolves by data_period DESC."""
+    bronze = tmp_path / "bronze"
+    state = ShardedStateIndex(
+        tmp_path / "idx", tier="silver", source="faers", policy=ResolutionPolicy(shard_count=4)
+    )
+    for period in ("2006Q1", "2006Q2"):
+        pkg = _create_bronze_duckdb(
+            bronze / f"{period}.duckdb", [("555", "C_DUP", 1, "20060101", None)]
+        )
+        state.update_with_period(pkg, period)
+
+    rec = state.get_case_timeline("C_DUP")
+    assert rec is not None and rec["latest_quarter"] == "2006Q2" and rec["submissions_count"] == 2

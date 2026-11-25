@@ -1381,18 +1381,35 @@ def index_verify_cmd(
         ]
         rebuilt_base = [(tmp_root / rel).as_posix() for rel in rebuilt.active_snapshot.shard_files]
 
-        active_sql = build_resolved_state_sql(active_base, active_deltas)
-        rebuilt_sql = build_resolved_state_sql(rebuilt_base, ())
-
+        shard_count = len(active_base)
         con = duckdb.connect(":memory:")
         try:
-            a_rows = con.execute(f"SELECT * FROM ({active_sql}) ORDER BY case_id").fetchall()
-            r_rows = con.execute(f"SELECT * FROM ({rebuilt_sql}) ORDER BY case_id").fetchall()
-            if a_rows != r_rows:
-                console.print(
-                    "[bold red]Logical state mismatch detected vs. full ledger rebuild![/bold red]"
-                )
-                raise typer.Exit(code=1)
+            for shard_idx, (a_shard, r_shard) in enumerate(
+                zip(active_base, rebuilt_base, strict=True)
+            ):
+                if active_deltas:
+                    resolved_a = build_resolved_state_sql([a_shard], active_deltas)
+                    shard_a_sql = (
+                        f"SELECT * FROM ({resolved_a}) "
+                        f"WHERE CAST(('0x' || substr(md5(case_id), 1, 8)) AS UBIGINT) % {shard_count} = {shard_idx}"
+                    )
+                else:
+                    shard_a_sql = f"SELECT * FROM read_parquet('{a_shard}')"
+                shard_r_sql = f"SELECT * FROM read_parquet('{r_shard}')"
+                diff_row = con.execute(
+                    f"""
+                    SELECT COUNT(*) FROM (
+                        (({shard_a_sql}) EXCEPT ({shard_r_sql}))
+                        UNION ALL
+                        (({shard_r_sql}) EXCEPT ({shard_a_sql}))
+                    )
+                    """  # nosec B608
+                ).fetchone()
+                if diff_row is None or int(diff_row[0]) != 0:
+                    console.print(
+                        f"[bold red]Logical state mismatch detected in shard {shard_idx:02d} vs. full ledger rebuild![/bold red]"
+                    )
+                    raise typer.Exit(code=1)
         finally:
             con.close()
 

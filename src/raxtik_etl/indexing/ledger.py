@@ -79,82 +79,118 @@ class LedgerManager:
             raise FileNotFoundError(f"Source package not found: {src}")
 
         tmp_path = self.ledger_dir / f".tmp_{period}.parquet"
-        if tmp_path.exists():
-            tmp_path.unlink()
+        tmp_path.unlink(missing_ok=True)
 
         con = duckdb.connect(":memory:")
         try:
-            if src.is_dir():
-                parquet_file = src / f"{self.policy.source_table}.parquet"
-                if not parquet_file.exists():
-                    raise FileNotFoundError(
-                        f"Expected table parquet file not found: {parquet_file}"
-                    )
-                relation_sql = f"read_parquet('{parquet_file.as_posix()}')"
-            elif src.suffix.lower() == ".parquet":
-                relation_sql = f"read_parquet('{src.as_posix()}')"
-            else:
-                con.execute(f"ATTACH '{src.as_posix()}' AS bronze_pkg (READ_ONLY);")
-                relation_sql = f"bronze_pkg.{self.policy.source_table}"
-
+            relation_sql = self._resolve_source_relation(con, src)
             cols = self._describe_columns(con, relation_sql)
-            ek = self.policy.entity_key.lower()
-            rk = self.policy.record_key.lower()
-            if ek not in cols or rk not in cols:
-                raise ValueError(
-                    f"Required columns ({self.policy.entity_key}, {self.policy.record_key}) "
-                    f"missing from {src}. Available: {sorted(cols)}"
-                )
+            con.execute(self._build_extract_sql(relation_sql, cols, period, tmp_path))
 
-            vc = self.policy.version_column.lower()
-            rd = self.policy.regulatory_date_column.lower()
-            md = self.policy.manufacturer_date_column.lower()
-
-            version_expr = (
-                f"TRY_CAST({self.policy.version_column} AS INTEGER)"
-                if vc in cols
-                else "CAST(NULL AS INTEGER)"
-            )
-            reg_date_expr = (
-                f"NULLIF(TRIM(CAST({self.policy.regulatory_date_column} AS VARCHAR)), '')"
-                if rd in cols
-                else "CAST(NULL AS VARCHAR)"
-            )
-            mfr_date_expr = (
-                f"NULLIF(TRIM(CAST({self.policy.manufacturer_date_column} AS VARCHAR)), '')"
-                if md in cols
-                else "CAST(NULL AS VARCHAR)"
-            )
-
-            extract_sql = f"""
-                COPY (
-                    SELECT DISTINCT
-                        COALESCE(
-                            NULLIF(TRIM(CAST({self.policy.entity_key} AS VARCHAR)), ''),
-                            'REPORT:' || TRIM(CAST({self.policy.record_key} AS VARCHAR))
-                        ) AS case_id,
-                        TRIM(CAST({self.policy.record_key} AS VARCHAR)) AS primary_id,
-                        '{period}' AS data_period,
-                        {version_expr} AS canonical_case_version,
-                        {reg_date_expr} AS latest_regulatory_date,
-                        {mfr_date_expr} AS manufacturer_date
-                    FROM {relation_sql}
-                    WHERE {self.policy.record_key} IS NOT NULL
-                      AND TRIM(CAST({self.policy.record_key} AS VARCHAR)) <> ''
-                    ORDER BY case_id, primary_id
-                ) TO '{tmp_path.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD);
-            """  # nosec B608
-
-            con.execute(extract_sql)
+            if overwrite and annual_path.exists():
+                self._replace_period_in_annual_ledger(con, annual_path, tmp_path, period, year)
+                tmp_path.unlink(missing_ok=True)
+                target_path.unlink(missing_ok=True)
+                return annual_path
         except Exception:
-            if tmp_path.exists():
-                tmp_path.unlink()
+            tmp_path.unlink(missing_ok=True)
             raise
         finally:
             con.close()
 
         tmp_path.replace(target_path)
         return target_path
+
+    def _resolve_source_relation(self, con: duckdb.DuckDBPyConnection, src: Path) -> str:
+        """Resolves a Bronze package directory, Parquet file, or DuckDB file into a SQL relation."""
+        if src.is_dir():
+            parquet_file = src / f"{self.policy.source_table}.parquet"
+            if not parquet_file.exists():
+                raise FileNotFoundError(f"Expected table parquet file not found: {parquet_file}")
+            return f"read_parquet('{parquet_file.as_posix()}')"
+        if src.suffix.lower() == ".parquet":
+            return f"read_parquet('{src.as_posix()}')"
+        con.execute(f"ATTACH '{src.as_posix()}' AS bronze_pkg (READ_ONLY);")
+        return f"bronze_pkg.{self.policy.source_table}"
+
+    def _build_extract_sql(
+        self, relation_sql: str, cols: set[str], period: str, dest_path: Path
+    ) -> str:
+        """Validates required columns and builds the canonical period-ledger extraction SQL."""
+        ek = self.policy.entity_key.lower()
+        rk = self.policy.record_key.lower()
+        if ek not in cols or rk not in cols:
+            raise ValueError(
+                f"Required columns ({self.policy.entity_key}, {self.policy.record_key}) "
+                f"missing from {relation_sql}. Available: {sorted(cols)}"
+            )
+
+        vc = self.policy.version_column.lower()
+        rd = self.policy.regulatory_date_column.lower()
+        md = self.policy.manufacturer_date_column.lower()
+
+        version_expr = (
+            f"TRY_CAST({self.policy.version_column} AS INTEGER)"
+            if vc in cols
+            else "CAST(NULL AS INTEGER)"
+        )
+        reg_date_expr = (
+            f"NULLIF(TRIM(CAST({self.policy.regulatory_date_column} AS VARCHAR)), '')"
+            if rd in cols
+            else "CAST(NULL AS VARCHAR)"
+        )
+        mfr_date_expr = (
+            f"NULLIF(TRIM(CAST({self.policy.manufacturer_date_column} AS VARCHAR)), '')"
+            if md in cols
+            else "CAST(NULL AS VARCHAR)"
+        )
+
+        return f"""
+            COPY (
+                SELECT DISTINCT
+                    COALESCE(
+                        NULLIF(TRIM(CAST({self.policy.entity_key} AS VARCHAR)), ''),
+                        'REPORT:' || TRIM(CAST({self.policy.record_key} AS VARCHAR))
+                    ) AS case_id,
+                    TRIM(CAST({self.policy.record_key} AS VARCHAR)) AS primary_id,
+                    '{period}' AS data_period,
+                    {version_expr} AS canonical_case_version,
+                    {reg_date_expr} AS latest_regulatory_date,
+                    {mfr_date_expr} AS manufacturer_date
+                FROM {relation_sql}
+                WHERE {self.policy.record_key} IS NOT NULL
+                  AND TRIM(CAST({self.policy.record_key} AS VARCHAR)) <> ''
+                ORDER BY case_id, primary_id
+            ) TO '{dest_path.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD);
+        """  # nosec B608
+
+    def _replace_period_in_annual_ledger(
+        self,
+        con: duckdb.DuckDBPyConnection,
+        annual_path: Path,
+        new_period_path: Path,
+        period: str,
+        year: str,
+    ) -> None:
+        """Atomically rewrites `YYYY.parquet` replacing all rows for `period`."""
+        tmp_annual = self.ledger_dir / f".tmp_{year}.parquet"
+        tmp_annual.unlink(missing_ok=True)
+        try:
+            con.execute(
+                f"""
+                COPY (
+                    SELECT * FROM read_parquet('{annual_path.as_posix()}')
+                    WHERE data_period <> '{period}'
+                    UNION ALL
+                    SELECT * FROM read_parquet('{new_period_path.as_posix()}')
+                    ORDER BY data_period, case_id, primary_id
+                ) TO '{tmp_annual.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD);
+                """  # nosec B608
+            )
+            tmp_annual.replace(annual_path)
+        except Exception:
+            tmp_annual.unlink(missing_ok=True)
+            raise
 
     def compact_completed_years(self, remove_quarterly: bool = True) -> List[Path]:
         """Compacts any year having all 4 quarterly ledgers (`Q1..Q4`) into `YYYY.parquet`.

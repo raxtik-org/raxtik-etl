@@ -106,13 +106,14 @@ def _grouped_state_select_sql(
             timeline[1].quarter AS latest_quarter,
             first_quarter,
             len(timeline)::INTEGER AS submissions_count,
-            (first_quarter <> timeline[1].quarter) AS is_cross_quarter,
+            (first_quarter <> _max_quarter) AS is_cross_quarter,
             {tie_sql} AS resolution_tie,
             timeline
         FROM (
             SELECT
                 case_id,
                 MIN(data_period) AS first_quarter,
+                MAX(data_period) AS _max_quarter,
                 LIST(
                     STRUCT_PACK(
                         quarter := data_period,
