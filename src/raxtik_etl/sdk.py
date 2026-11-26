@@ -88,7 +88,7 @@ class BaseDataset:
             timeout: HTTP request timeout in seconds when downloading.
             revision: Hugging Face Git revision or tag (e.g., 'main' or 'v0.1.0').
             tier: Dataset release tier ('bronze', 'silver', or future 'gold'). Defaults to 'bronze'.
-            remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
+            remote: If True, streams directly from Hugging Face Hub over HTTPS without downloading the full dataset.
             index_dir: Optional local directory containing a pre-built tier index (`manifest.json`).
             cache_index: When `remote=True` and `tier != 'bronze'`, caches the lightweight index
                 locally for 0ms index latency while keeping Bronze data remote. Defaults to False
@@ -258,7 +258,7 @@ class BaseDataset:
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag (defaults to version tag or 'main').
             tier: Dataset release tier ('bronze', 'silver', or future 'gold'). Defaults to 'bronze'.
-            remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
+            remote: If True, streams directly from Hugging Face Hub over HTTPS without downloading the full dataset.
             index_dir: Optional local directory containing a pre-built tier index.
             cache_index: When `remote=True` and `tier != 'bronze'`, caches the index locally.
             as_of_period: Optional upper-bound period for time-bounded winner resolution.
@@ -344,7 +344,7 @@ class BaseDataset:
 
         version_str = str(rows[0][0]).strip() if rows else "1.0.0"
         parts = version_str.split(".")
-        if not parts or not parts[0].isdigit():
+        if len(parts) < 2 or not all(p.isdigit() for p in parts):
             raise ValueError(f"Invalid package_format_version '{version_str}' in package metadata.")
         major = int(parts[0])
         if major != 1:
@@ -593,7 +593,7 @@ class Dataset(BaseDataset):
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag.
             tier: Dataset release tier ('bronze', 'silver', or future 'gold'). Defaults to 'bronze'.
-            remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
+            remote: If True, streams directly from Hugging Face Hub over HTTPS without downloading the full dataset.
             index_dir: Optional local directory containing a pre-built tier index.
             cache_index: When `remote=True` and `tier != 'bronze'`, caches the index locally.
             as_of_period: Optional upper-bound period for time-bounded winner resolution.
@@ -645,7 +645,7 @@ class Dataset(BaseDataset):
             timeout: HTTP request timeout in seconds.
             revision: Hugging Face Git revision or tag (defaults to version tag or 'main').
             tier: Dataset release tier ('bronze', 'silver', or future 'gold'). Defaults to 'bronze'.
-            remote: If True, streams directly from Hugging Face Hub over HTTPS with zero local disk footprint.
+            remote: If True, streams directly from Hugging Face Hub over HTTPS without downloading the full dataset.
             index_dir: Optional local directory containing a pre-built tier index.
             cache_index: When `remote=True` and `tier != 'bronze'`, caches the index locally.
             as_of_period: Optional upper-bound period for time-bounded winner resolution.

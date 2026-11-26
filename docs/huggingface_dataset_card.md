@@ -175,12 +175,12 @@ with FAERS.from_hf("2024Q1") as faers:
     cases_df = faers.cases(limit=1000)
     print(cases_df)
 
-# 2. Zero Local Disk (Remote Streaming): Queries directly over HTTPS without local downloads
+# 2. Remote Streaming (No Full Dataset Download): Queries directly over HTTPS without full downloads
 with FAERS.from_hf("2024Q1", remote=True) as faers:
     cases_df = faers.cases(limit=100)
     print(cases_df)
 
-# 3. Silver Tier (Cross-Quarter Deduplication + Case Timeline + Point-in-Time)
+# 3. Quarter-Scoped Silver Tier (winning cases in 2024Q1 as of 2025Q4 + full case timeline)
 with FAERS.from_hf("2024Q1", tier="silver", remote=True, as_of_period="2025Q4") as faers:
     cases_df = faers.cases(limit=100)
     timeline = faers.case_timeline(str(cases_df["case_id"][0]))
@@ -189,7 +189,7 @@ with FAERS.from_hf("2024Q1", tier="silver", remote=True, as_of_period="2025Q4") 
 
 ---
 
-## ⚡ Remote Querying via DuckDB (Zero Local Storage)
+## ⚡ Remote Querying via DuckDB (No Full Dataset Download)
 
 You can run analytical SQL queries directly against datasets hosted on Hugging Face Hub over HTTPS without downloading full archives to disk. DuckDB's built-in `httpfs` extension fetches only the metadata and column pages required via HTTP Range requests.
 

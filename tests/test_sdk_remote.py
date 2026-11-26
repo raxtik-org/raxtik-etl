@@ -114,6 +114,8 @@ def test_sdk_accessors_and_summary(tmp_path):
     [
         ("2.0.0", "Unsupported package_format_version"),
         ("invalid", "Invalid package_format_version"),
+        ("1.foo", "Invalid package_format_version"),
+        ("1.", "Invalid package_format_version"),
     ],
 )
 def test_sdk_invalid_format_version(tmp_path, ver: str, match: str):

@@ -251,3 +251,46 @@ def test_cli_cleanup_bronze_and_upload(tmp_path: Path, monkeypatch: object) -> N
     assert captured["tag"] == "v0.1.0"
     assert captured["force"] is True
     assert captured["repo_id"] == "org/repo"
+
+
+def test_build_rejects_changed_source(tmp_path: Path) -> None:
+    """index build without --overwrite must fail if Bronze source changed for an existing ledger."""
+    pkg_dir = tmp_path / "packages"
+    idx_dir = tmp_path / "silver_index"
+    pkg_file = _create_bronze_pkg(
+        pkg_dir / "faers_2004Q1.duckdb", [("101", "C1", 1, "20040115", None)]
+    )
+
+    base_args = [
+        "index",
+        "build",
+        "--source",
+        "faers",
+        "--tier",
+        "silver",
+        "--start",
+        "2004Q1",
+        "--end",
+        "2004Q1",
+        "--package-dir",
+        pkg_dir.as_posix(),
+        "--index-dir",
+        idx_dir.as_posix(),
+        "--shards",
+        "2",
+    ]
+    assert runner.invoke(app, base_args).exit_code == 0
+
+    # Replace Bronze package with different content
+    pkg_file.unlink()
+    _create_bronze_pkg(pkg_file, [("999", "C1", 2, "20040120", None)])
+
+    # Without --overwrite: must fail closed and NOT delete Bronze package even with --cleanup-bronze
+    res_fail = runner.invoke(app, [*base_args, "--cleanup-bronze"])
+    assert res_fail.exit_code != 0
+    assert "Source fingerprint mismatch" in res_fail.output
+    assert pkg_file.exists()
+
+    # With --overwrite: succeeds and updates fingerprint to the new package
+    res_ok = runner.invoke(app, [*base_args, "--overwrite"])
+    assert res_ok.exit_code == 0, res_ok.output

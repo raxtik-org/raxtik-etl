@@ -1203,15 +1203,33 @@ def index_build_cmd(
     console.print(
         f"[bold cyan]Building {tier} index for {source} ({len(periods)} periods: {periods[0]}..{periods[-1]})...[/bold cyan]"
     )
+    prev_manifest = state.load_manifest()
+    prev_fps = prev_manifest.active_snapshot.period_fingerprints if prev_manifest else {}
     period_fingerprints: dict[str, str] = {}
     for period in periods:
         src_pkg = _find_bronze_package(pkg_dir, source.lower(), period)
-        period_fingerprints[period] = compute_source_fingerprint(src_pkg)
+        incoming_fp = compute_source_fingerprint(src_pkg)
         try:
             state.ledger.extract_period_ledger(src_pkg, period, overwrite=overwrite)
+            period_fingerprints[period] = incoming_fp
             console.print(f"  [dim]Extracted ledger:[/dim] {period}")
         except FileExistsError:
-            console.print(f"  [dim]Ledger already exists (skipped):[/dim] {period}")
+            existing_fp = prev_fps.get(period)
+            if existing_fp is not None and existing_fp != incoming_fp:
+                console.print(
+                    f"[bold red]Source fingerprint mismatch for existing ledger {period}[/bold red] "
+                    f"(recorded={existing_fp[:12]}, incoming={incoming_fp[:12]}). "
+                    "Pass --overwrite to re-extract from the updated Bronze package."
+                )
+                raise typer.Exit(code=1)
+            if existing_fp is not None:
+                period_fingerprints[period] = existing_fp
+                console.print(f"  [dim]Ledger already exists (verified, skipped):[/dim] {period}")
+            else:
+                console.print(
+                    f"  [yellow]Ledger already exists with no recorded fingerprint (skipped):[/yellow] "
+                    f"{period} (pass --overwrite to record verified fingerprint)"
+                )
         if cleanup_bronze and src_pkg.exists():
             if src_pkg.is_dir():
                 shutil.rmtree(src_pkg, ignore_errors=True)
