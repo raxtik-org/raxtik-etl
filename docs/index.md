@@ -25,6 +25,7 @@ deduplication
 :caption: Guides & Schema Specifications
 
 schema/canonical_data_model
+schema/table_columns
 guides/2004q1_usage_guide
 fda_faers_official_data_dictionary
 schema/historical_schema_audit

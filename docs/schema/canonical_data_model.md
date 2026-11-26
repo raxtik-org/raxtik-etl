@@ -50,7 +50,7 @@ The data model consists of three primary components:
 
 ## 2. Core Fact Tables
 
-Every source connector projects extracted submission records into 7 canonical fact tables:
+Every source connector projects extracted submission records into 7 canonical fact tables (see [Table Column Reference](table_columns.md) for the complete column-by-column data dictionary across all 7 Bronze tables and Silver index schemas):
 
 | Table | Entity / Domain | Primary Key | Foreign Key | Description |
 | :--- | :--- | :--- | :--- | :--- |

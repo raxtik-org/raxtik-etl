@@ -37,6 +37,7 @@ Every source connector projects raw records into an analytical star-schema archi
 
 📖 **Visual Entity-Relationship Diagram**:
 - 📊 **[Full Interactive ER Diagram (Mermaid)](ER_DIAGRAM.md)**
+- 📋 **[Table Column Reference (All 118 Columns + Silver Index)](docs/schema/table_columns.md)**
 - 🌐 **[ReadTheDocs: Canonical Data Model](https://raxtik-etl.readthedocs.io/en/latest/schema/canonical_data_model.html)**
 - 📚 **[Coded Values Reference](docs/schema/code_list_history.md)**
 
