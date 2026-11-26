@@ -30,10 +30,11 @@ with FAERS("2004Q1") as faers:
     custom_df = faers.query("""
         SELECT
             reported_drug_name,
-            COUNT(*) AS reaction_count
-        FROM case_adverse_events_summary
+            COUNT(*) AS report_count
+        FROM drug
+        WHERE role_code = 'PS'
         GROUP BY reported_drug_name
-        ORDER BY reaction_count DESC
+        ORDER BY report_count DESC
         LIMIT 10
     """)
     print(custom_df)
