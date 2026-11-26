@@ -337,10 +337,22 @@ class ShardedStateIndex:
         existing_history = prev_manifest.snapshot_history if prev_manifest else []
         parent_id = prev_manifest.active_snapshot_id if prev_manifest else None
         generation = (prev_manifest.generation + 1) if prev_manifest else 1
+        indexed_set = set(indexed_periods)
         merged_fingerprints = (
-            dict(prev_manifest.active_snapshot.period_fingerprints) if prev_manifest else {}
+            {
+                p: fp
+                for p, fp in prev_manifest.active_snapshot.period_fingerprints.items()
+                if p in indexed_set
+            }
+            if prev_manifest
+            else {}
         )
         if period_fingerprints:
+            extra = set(period_fingerprints) - indexed_set
+            if extra:
+                raise ValueError(
+                    f"period_fingerprints contains periods not in indexed_periods: {sorted(extra)}"
+                )
             merged_fingerprints.update(period_fingerprints)
 
         label = snapshot_label or indexed_periods[-1]
@@ -635,7 +647,18 @@ class ShardedStateIndex:
                 data_period=period,
                 overwrite=replace_period,
             )
-        except FileExistsError:
+        except FileExistsError as err:
+            existing_fp = (
+                prev_manifest.active_snapshot.period_fingerprints.get(period)
+                if prev_manifest
+                else None
+            )
+            if existing_fp is None or existing_fp != fingerprint:
+                raise ValueError(
+                    f"Existing ledger for period {period} cannot be reused without a matching "
+                    f"recorded source fingerprint (recorded={existing_fp}, incoming={fingerprint}). "
+                    "Pass replace_period=True to explicitly re-extract."
+                ) from err
             incoming_ledger = self.ledger.get_period_ledger_path(period)
 
         # Bootstrap cleanly if no base snapshot exists yet

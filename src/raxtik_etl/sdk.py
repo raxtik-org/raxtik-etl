@@ -344,7 +344,7 @@ class BaseDataset:
 
         version_str = str(rows[0][0]).strip() if rows else "1.0.0"
         parts = version_str.split(".")
-        if len(parts) < 2 or not all(p.isdigit() for p in parts):
+        if not (2 <= len(parts) <= 3) or not all(p.isdigit() for p in parts):
             raise ValueError(f"Invalid package_format_version '{version_str}' in package metadata.")
         major = int(parts[0])
         if major != 1:

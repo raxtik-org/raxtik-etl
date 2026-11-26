@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-11-26
+
+**Full Changelog**: https://github.com/raxtik-org/raxtik-etl/compare/v0.1.0.dev3...v0.1.0
+
+### Added
+- First stable release of `raxtik-etl`, aligned with the verified 91-quarter (`2004Q1..2026Q3`) Bronze & Silver dataset (`v0.1.0`) on Hugging Face Hub (`25,233,828` submissions → `21,054,158` unique cases, `2,644,931` multi-period cases, all 91 SHA-256 `period_fingerprints` recorded).
+- Complete column-by-column schema reference (`docs/schema/table_columns.md`), Silver Tier quickstarts, CLI reference (`raxtik-etl index`), and PyPI SEO & funding metadata.
+
+### Fixed
+- Atomic compacted-year replacement (`YYYY.parquet`) in `LedgerManager.extract_period_ledger()` so stale quarter rows cannot survive historical reprocessing.
+- Corrected `is_cross_quarter` calculation to `MIN(data_period) <> MAX(data_period)`.
+- Upgraded `raxtik-etl index verify` to low-memory shard-by-shard DuckDB `EXCEPT ALL` multiset comparison.
+- Enforced strict source-fingerprint provenance in both `index build` and `ShardedStateIndex.update_with_period()`, scoped `build_from_ledgers()` fingerprints to `indexed_periods`, and tightened `package_format_version` validation.
+
 ## [0.1.0.dev3] - 2026-11-25
 
 **Full Changelog**: https://github.com/raxtik-org/raxtik-etl/compare/v0.1.0.dev2...v0.1.0.dev3

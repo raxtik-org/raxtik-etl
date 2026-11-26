@@ -36,6 +36,7 @@ def _create_bronze_duckdb(
             """
         )
         con.executemany("INSERT INTO demo VALUES (?, ?, ?, ?, ?);", rows)
+        con.execute("CHECKPOINT;")
     finally:
         con.close()
     return db_path
@@ -553,3 +554,40 @@ def test_republished_primary_id(tmp_path: Path) -> None:
 
     rec = state.get_case_timeline("C_DUP")
     assert rec is not None and rec["latest_quarter"] == "2006Q2" and rec["submissions_count"] == 2
+
+
+def test_update_rejects_unverified_ledger(tmp_path: Path) -> None:
+    """update_with_period must fail closed if a ledger exists on disk with no verified fingerprint."""
+    bronze = tmp_path / "bronze"
+    state = ShardedStateIndex(
+        tmp_path / "idx", tier="silver", source="faers", policy=ResolutionPolicy(shard_count=4)
+    )
+    p1 = _create_bronze_duckdb(bronze / "q1.duckdb", [("101", "C1", 1, "20240115", None)])
+    state.ledger.extract_period_ledger(p1, "2024Q1")
+
+    p1_changed = _create_bronze_duckdb(
+        bronze / "q1_v2.duckdb", [("999", "C1", 2, "20240120", None)]
+    )
+    with pytest.raises(ValueError, match="cannot be reused without a matching"):
+        state.update_with_period(p1_changed, "2024Q1", replace_period=False)
+
+    manifest = state.update_with_period(p1_changed, "2024Q1", replace_period=True)
+    assert manifest.active_snapshot.indexed_periods == ["2024Q1"]
+    rec = state.get_case_timeline("C1")
+    assert rec is not None and rec["latest_primary_id"] == "999"
+
+
+def test_subset_build_scopes_fingerprints(tmp_path: Path) -> None:
+    """Rebuilding a subset of periods must drop fingerprints for omitted periods."""
+    bronze = tmp_path / "bronze"
+    state = ShardedStateIndex(
+        tmp_path / "idx", tier="silver", source="faers", policy=ResolutionPolicy(shard_count=4)
+    )
+    p1 = _create_bronze_duckdb(bronze / "q1.duckdb", [("101", "C1", 1, "20040115", None)])
+    p2 = _create_bronze_duckdb(bronze / "q2.duckdb", [("201", "C2", 1, "20040415", None)])
+    state.update_with_period(p1, "2004Q1")
+    state.update_with_period(p2, "2004Q2")
+
+    sub = state.build_from_ledgers(periods=["2004Q2"])
+    assert sub.active_snapshot.indexed_periods == ["2004Q2"]
+    assert set(sub.active_snapshot.period_fingerprints.keys()) == {"2004Q2"}
