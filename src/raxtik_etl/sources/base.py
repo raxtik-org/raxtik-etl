@@ -23,6 +23,7 @@ from raxtik_etl.schema.registry import CANONICAL_SCHEMA_VERSION
 from raxtik_etl.sources.discovery import find_files_by_entity
 from raxtik_etl.sources.protocol import SourceAdapter
 from raxtik_etl.sources.temporal import normalize_quarter
+from raxtik_etl.sources.validation import validate_extract_file
 
 if TYPE_CHECKING:
     from raxtik_etl.indexing.models import ResolutionPolicy
@@ -99,8 +100,6 @@ class BaseSourceAdapter(SourceAdapter):
         delimiter: str = "$",
     ) -> Set[str]:
         """Validates that extract file exists, is non-empty, and contains expected headers."""
-        from raxtik_etl.sources.validation import validate_extract_file
-
         return validate_extract_file(
             file_path, required_columns=required_columns, delimiter=delimiter
         )

@@ -52,21 +52,21 @@ with FAERS.from_hf("2024Q1") as faers:
     cases_df = faers.cases(limit=100)
     print(f"Loaded {len(cases_df)} cases.")
 
-# 2. Zero Local Disk (Remote Streaming): Queries over HTTPS without local downloads
+# 2. Remote Streaming (No Full Dataset Download): Queries over HTTPS without downloading full packages
 with FAERS.from_hf("2024Q1", remote=True) as faers:
     cases_df = faers.cases(limit=100)
     drugs_df = faers.drugs(limit=100)
     reactions_df = faers.reactions(limit=100)
 ```
 
-### Silver Tier: Cross-Quarter Deduplication & Case Timelines
+### Silver Tier: Quarter-Scoped Cross-Quarter Deduplication & Case Timelines
 
-The **Silver Tier** resolves cases across all 91 quarters (`2004Q1..2026Q3`) using a compact 16-shard Parquet index (`silver/index/`), without duplicating Bronze tables:
+The **Silver Tier** resolves cases across all indexed quarters (`2004Q1–present`) using a compact 16-shard Parquet index (`silver/index/`), without duplicating Bronze tables. Opening `FAERS.from_hf("<quarter>", tier="silver", as_of_period="<cutoff>")` is **quarter-scoped**: it attaches `<quarter>` and filters `cases` and child tables (`drug`, `reac`, `outc`, `indi`, `ther`, `rpsr`) to cases whose winning report (as of `<cutoff>`) lives in `<quarter>`, while `case_timeline(case_id)` returns the full multi-quarter history across all quarters:
 
 ```python
 from raxtik_etl import FAERS
 
-# 1. Remote Silver Query (Zero Local Disk): Streams both Bronze data & Silver index over HTTPS
+# 1. Remote Silver Query (No Full Dataset Download): Streams both Bronze data & Silver index over HTTPS
 with FAERS.from_hf(
     "2024Q1",
     tier="silver",

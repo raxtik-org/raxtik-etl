@@ -27,8 +27,21 @@ from rich.table import Table
 
 from raxtik_etl.distribution.huggingface import (
     DEFAULT_HTTP_TIMEOUT,
+    connect_remote_hf_duckdb,
+    download_package_from_hf,
     get_default_package_dir,
 )
+from raxtik_etl.indexing.distribution import (
+    fetch_remote_index_manifest,
+    get_default_index_dir,
+    resolve_local_index_shards,
+    sync_remote_index_to_local_cache,
+)
+from raxtik_etl.indexing.middleware import (
+    apply_tier_views,
+    materialize_filtered_package,
+)
+from raxtik_etl.packaging.builder import compute_sha256
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -109,8 +122,6 @@ class BaseDataset:
         is_derived_tier = self.tier != "bronze"
 
         if self.remote:
-            from raxtik_etl.distribution.huggingface import connect_remote_hf_duckdb
-
             self._remote_url, self._con = connect_remote_hf_duckdb(
                 repo_id=self.hf_repo,
                 source=self.source,
@@ -130,10 +141,6 @@ class BaseDataset:
 
         if not self.duckdb_path.exists():
             if download_if_missing:
-                from raxtik_etl.distribution.huggingface import (
-                    download_package_from_hf,
-                )
-
                 download_package_from_hf(
                     data_period_or_name=self.data_period,
                     dest_dir=self.pkg_dir,
@@ -172,14 +179,6 @@ class BaseDataset:
         revision: Optional[str],
     ) -> None:
         """Resolves index shards (local, cached, or 100% remote) and mounts tier views."""
-        from raxtik_etl.indexing.distribution import (
-            fetch_remote_index_manifest,
-            get_default_index_dir,
-            resolve_local_index_shards,
-            sync_remote_index_to_local_cache,
-        )
-        from raxtik_etl.indexing.middleware import apply_tier_views
-
         if self.remote:
             if self.index_dir and (self.index_dir / "manifest.json").exists():
                 manifest, shard_uris, delta_uris = resolve_local_index_shards(self.index_dir)
@@ -292,8 +291,6 @@ class BaseDataset:
             raise NotImplementedError(
                 "SHA-256 checksum computation requires a local file. Pass `remote=False` to download."
             )
-        from raxtik_etl.packaging.builder import compute_sha256
-
         return compute_sha256(self.duckdb_path)
 
     def verify_checksum(self, expected_sha256: Optional[str] = None) -> bool:
@@ -516,8 +513,6 @@ class BaseDataset:
             )
         if not self._index_shard_uris:
             raise RuntimeError("Tier index shards are not mounted.")
-        from raxtik_etl.indexing.middleware import materialize_filtered_package
-
         return materialize_filtered_package(
             bronze_db_path=self.duckdb_path,
             dest_db_path=dest_path,

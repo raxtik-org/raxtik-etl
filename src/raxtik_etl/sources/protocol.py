@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, runtime_c
 
 import duckdb
 
+from raxtik_etl.sources.temporal import normalize_quarter
+
 if TYPE_CHECKING:
     from raxtik_etl.migrations.base import BaseMigration
 
@@ -40,8 +42,6 @@ class SourceArtifact:
         if not self.path.exists():
             raise FileNotFoundError(f"Source artifact not found at {self.path}")
         if self.data_period:
-            from raxtik_etl.sources.temporal import normalize_quarter
-
             try:
                 self.data_period = normalize_quarter(self.data_period)
             except ValueError:

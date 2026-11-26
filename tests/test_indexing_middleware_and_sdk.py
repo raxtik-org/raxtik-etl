@@ -230,11 +230,11 @@ def test_sdk_remote_silver_supports_fully_remote_and_cache_index(tmp_path: Path)
     # Test 100% fully remote path (`cache_index=False`)
     with (
         patch(
-            "raxtik_etl.distribution.huggingface.connect_remote_hf_duckdb",
+            "raxtik_etl.sdk.connect_remote_hf_duckdb",
             side_effect=_fake_connect_remote,
         ),
         patch(
-            "raxtik_etl.indexing.distribution.fetch_remote_index_manifest",
+            "raxtik_etl.sdk.fetch_remote_index_manifest",
             return_value=(manifest, local_shards, local_deltas),
         ) as mock_fetch_remote,
     ):
@@ -246,11 +246,11 @@ def test_sdk_remote_silver_supports_fully_remote_and_cache_index(tmp_path: Path)
     # Test `cache_index=True` path
     with (
         patch(
-            "raxtik_etl.distribution.huggingface.connect_remote_hf_duckdb",
+            "raxtik_etl.sdk.connect_remote_hf_duckdb",
             side_effect=_fake_connect_remote,
         ),
         patch(
-            "raxtik_etl.indexing.distribution.sync_remote_index_to_local_cache",
+            "raxtik_etl.sdk.sync_remote_index_to_local_cache",
             return_value=(manifest, local_shards, local_deltas),
         ) as mock_sync_cache,
     ):

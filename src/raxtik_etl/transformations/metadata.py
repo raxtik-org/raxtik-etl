@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
+from importlib.metadata import metadata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -34,8 +35,6 @@ console = Console()
 def get_code_license() -> str:
     """Derives software code license dynamically from package metadata (pyproject.toml)."""
     try:
-        from importlib.metadata import metadata
-
         return metadata("raxtik-etl").get("License") or "AGPL-3.0-or-later"
     except Exception:
         return "AGPL-3.0-or-later"

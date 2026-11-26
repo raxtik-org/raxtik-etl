@@ -7,14 +7,20 @@ Designed with zero-auth public downloads:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
+import time
+import warnings
 from pathlib import Path
 from typing import Any, List, Optional, Sequence, Union
 
+import duckdb
 import requests
 from rich.console import Console
+
+from raxtik_etl.sources.network import stream_download
 
 logger = logging.getLogger(__name__)
 
@@ -328,8 +334,6 @@ def download_package_from_hf(
             part_file.unlink()
 
         try:
-            from raxtik_etl.sources.network import stream_download
-
             stream_download(response, part_file, desc=filename)
 
             # Automatic SHA-256 verification on .part staging file before promotion
@@ -625,10 +629,6 @@ def connect_remote_hf_duckdb(
     Raises:
         RuntimeError: If connection fails after max_retries.
     """
-    import time
-    import warnings
-
-    import duckdb
 
     resolved_rev = resolve_hf_revision(repo_id=repo_id, revision=revision)
     year = data_period[:4]
@@ -692,7 +692,6 @@ def fetch_hf_json(
     Raises:
         FileNotFoundError: If the file does not exist (HTTP != 200).
     """
-    import json
 
     rev = resolve_hf_revision(repo_id=repo_id, revision=revision, timeout=timeout)
     url = build_hf_resolve_url(repo_id, rev, rel_path)

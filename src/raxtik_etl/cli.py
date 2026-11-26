@@ -1,10 +1,18 @@
 import os
+import re
+import shutil
+import sys
+import tempfile
+import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, List, Optional
 
+import duckdb
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 
 from raxtik_etl.consolidation import (
     build_consolidated_package,
@@ -13,7 +21,18 @@ from raxtik_etl.consolidation import (
 from raxtik_etl.distribution.huggingface import (
     DEFAULT_HF_REPO,
     DEFAULT_HTTP_TIMEOUT,
+    download_package_from_hf,
     get_default_package_dir,
+    tag_hf_dataset,
+    upload_package_to_hf,
+)
+from raxtik_etl.indexing import (
+    ResolutionPolicy,
+    ShardedStateIndex,
+    build_resolved_state_sql,
+    compute_source_fingerprint,
+    get_default_index_dir,
+    upload_index_to_hf,
 )
 from raxtik_etl.packaging.builder import (
     PACKAGE_OUTPUT_DIR,
@@ -28,6 +47,7 @@ from raxtik_etl.sources.registry import (
     get_available_sources,
     get_source_adapter,
 )
+from raxtik_etl.sources.temporal import normalize_quarter
 
 app = typer.Typer(
     name="raxtik-etl",
@@ -294,7 +314,6 @@ def build_cmd(
 
 def _get_process_rss_mb() -> float:
     import resource
-    import sys
 
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return (rss / (1024 * 1024)) if sys.platform == "darwin" else (rss / 1024)
@@ -320,7 +339,6 @@ def _resolve_quarter_archive(
     force: bool,
 ) -> tuple[Optional[Path], float]:
     """Resolves local cached archive or downloads via source adapter."""
-    import time
 
     archive_file = find_cached_archive(CACHE_DIR, quarter, source)
     if force and archive_file and archive_file.exists():
@@ -361,10 +379,6 @@ def _flush_hf_batch(
     clean_local: bool,
 ) -> float:
     """Uploads accumulated package batch to Hugging Face Hub in a single bulk commit."""
-    import shutil
-    import time
-
-    from raxtik_etl.distribution.huggingface import upload_package_to_hf
 
     if not batch_quarters:
         return 0.0
@@ -456,7 +470,6 @@ def batch_build_cmd(
     ),
 ):
     """Batch build standalone packages for every quarter in the specified range."""
-    import time
 
     try:
         adapter = get_source_adapter(source)
@@ -547,16 +560,12 @@ def batch_build_cmd(
     _flush()
 
     if upload and tag and built_count > 0:
-        from raxtik_etl.distribution.huggingface import tag_hf_dataset
-
         try:
             tag_hf_dataset(repo_id=repo_id, tag=tag, token=token, force=force)
         except Exception as e:
             console.print(f"[bold yellow]Warning: could not create tag '{tag}': {e}[/bold yellow]")
 
     total_wall_clock = time.perf_counter() - t_batch_start
-
-    from rich.table import Table
 
     summary_table = Table(title=f"Batch Build & Upload Summary ({quarters[0]}..{quarters[-1]})")
     summary_table.add_column("Stage / Metric", style="cyan", no_wrap=True)
@@ -656,8 +665,6 @@ def inspect_cmd(
     candidate_path = db_path or (Path(chosen) if chosen and Path(chosen).exists() else None)
 
     if candidate_path and candidate_path.exists():
-        import duckdb
-
         # Auto-detect database structure by introspecting internal catalog tables
         tables: set[str] = set()
         try:
@@ -692,7 +699,6 @@ def inspect_cmd(
                 return
         else:
             # Case C: Generic DuckDB database fallback: report row counts for all tables
-            from rich.table import Table
 
             tbl_report = Table(title=f"Database Summary: {candidate_path.name}", style="cyan")
             tbl_report.add_column("Table Name", style="bold white")
@@ -824,7 +830,6 @@ def hf_download_cmd(
     ),
 ) -> None:
     """Download a compiled FAERS package from Hugging Face Hub (zero auth required)."""
-    from raxtik_etl.distribution.huggingface import download_package_from_hf
 
     try:
         download_package_from_hf(
@@ -930,7 +935,6 @@ def hf_upload_cmd(
     ),
 ) -> None:
     """Upload compiled packages to Hugging Face Hub (supports single data period or quarter range)."""
-    from raxtik_etl.distribution.huggingface import tag_hf_dataset, upload_package_to_hf
 
     if start and end:
         quarters = parse_quarter_range(start, end)
@@ -1055,7 +1059,6 @@ def upload_cmd(
 @app.command("sources")
 def sources_cmd() -> None:
     """List installed safety data source connectors (e.g. FAERS)."""
-    from rich.table import Table
 
     sources = get_available_sources()
     if not sources:
@@ -1084,9 +1087,6 @@ app.add_typer(index_app, name="index")
 
 def _resolve_cli_policy(source: str, shards: int) -> Any:
     """Resolves ResolutionPolicy from installed source adapter (or canonical default)."""
-    from dataclasses import replace
-
-    from raxtik_etl.indexing.models import ResolutionPolicy
 
     try:
         adapter = get_source_adapter(source)
@@ -1109,8 +1109,6 @@ def _find_bronze_package(pkg_dir: Path, source: str, period: str) -> Path:
     if pq_path.exists():
         return pq_path
 
-    from raxtik_etl.distribution.huggingface import download_package_from_hf
-
     console.print(
         f"  [cyan]Bronze package {source}_{period} not found locally — downloading from Hugging Face...[/cyan]"
     )
@@ -1125,7 +1123,6 @@ def _find_bronze_package(pkg_dir: Path, source: str, period: str) -> Path:
 
 def _discover_local_periods(pkg_dir: Path, source: str) -> List[str]:
     """Discovers all locally available quarterly periods for `source` in `pkg_dir`."""
-    import re
 
     pattern = re.compile(rf"^{re.escape(source)}_(\d{{4}}Q[1-4])\.(duckdb|parquet)$", re.IGNORECASE)
     found = set()
@@ -1179,8 +1176,6 @@ def index_build_cmd(
     ),
 ) -> None:
     """Deterministically builds a fresh immutable tier index snapshot from Bronze packages."""
-    from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
-
     pkg_dir = package_dir or get_default_package_dir()
     idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
     policy = _resolve_cli_policy(source, shards)
@@ -1192,8 +1187,6 @@ def index_build_cmd(
         )
         raise typer.Exit(code=1)
     elif data_period:
-        from raxtik_etl.sources.temporal import normalize_quarter
-
         periods = [normalize_quarter(data_period)]
     elif start and end:
         periods = parse_quarter_range(start, end)
@@ -1210,8 +1203,10 @@ def index_build_cmd(
     console.print(
         f"[bold cyan]Building {tier} index for {source} ({len(periods)} periods: {periods[0]}..{periods[-1]})...[/bold cyan]"
     )
+    period_fingerprints: dict[str, str] = {}
     for period in periods:
         src_pkg = _find_bronze_package(pkg_dir, source.lower(), period)
+        period_fingerprints[period] = compute_source_fingerprint(src_pkg)
         try:
             state.ledger.extract_period_ledger(src_pkg, period, overwrite=overwrite)
             console.print(f"  [dim]Extracted ledger:[/dim] {period}")
@@ -1219,8 +1214,6 @@ def index_build_cmd(
             console.print(f"  [dim]Ledger already exists (skipped):[/dim] {period}")
         if cleanup_bronze and src_pkg.exists():
             if src_pkg.is_dir():
-                import shutil
-
                 shutil.rmtree(src_pkg, ignore_errors=True)
             else:
                 src_pkg.unlink(missing_ok=True)
@@ -1230,7 +1223,7 @@ def index_build_cmd(
         for c in compacted:
             console.print(f"  [green]Compacted annual ledger:[/green] {c.name}")
 
-    manifest = state.build_from_ledgers(periods=periods)
+    manifest = state.build_from_ledgers(periods=periods, period_fingerprints=period_fingerprints)
     snap = manifest.active_snapshot
     console.print(
         Panel(
@@ -1271,8 +1264,6 @@ def index_update_cmd(
     ),
 ) -> None:
     """Incrementally updates the index with a single incoming quarter (never scans historical Bronze)."""
-    from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
-    from raxtik_etl.sources.temporal import normalize_quarter
 
     pkg_dir = package_dir or get_default_package_dir()
     idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
@@ -1313,8 +1304,6 @@ def index_compact_cmd(
     ),
 ) -> None:
     """Compacts completed 4-quarter years in `ledger/` and merges accumulated state deltas into a new base snapshot."""
-    from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
-
     idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
     state = ShardedStateIndex(idx_root, tier=tier, source=source)
 
@@ -1347,15 +1336,6 @@ def index_verify_cmd(
     ),
 ) -> None:
     """Verifies logical rebuild equality by rebuilding from ledgers and comparing canonical state."""
-    import tempfile
-
-    import duckdb
-
-    from raxtik_etl.indexing import (
-        ShardedStateIndex,
-        build_resolved_state_sql,
-        get_default_index_dir,
-    )
 
     idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
     state = ShardedStateIndex(idx_root, tier=tier, source=source)
@@ -1434,9 +1414,6 @@ def index_lookup_cmd(
     ),
 ) -> None:
     """Performs an O(1) single-shard lookup and displays the full case submission timeline."""
-    from rich.table import Table
-
-    from raxtik_etl.indexing import ShardedStateIndex, get_default_index_dir
 
     idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
     state = ShardedStateIndex(idx_root, tier=tier, source=source)
@@ -1488,8 +1465,6 @@ def index_upload_cmd(
     ),
 ) -> None:
     """Uploads the local `{tier}/index/` folder to Hugging Face Hub."""
-    from raxtik_etl.indexing import get_default_index_dir, upload_index_to_hf
-
     idx_root = index_dir or get_default_index_dir(source=source, tier=tier)
     url = upload_index_to_hf(
         index_root=idx_root, repo_id=repo_id, tier=tier, token=token, tag=tag, force=force

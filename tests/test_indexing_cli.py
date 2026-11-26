@@ -79,6 +79,11 @@ def test_cli_index_build_update_verify_and_lookup(tmp_path: Path) -> None:
     assert res_build.exit_code == 0, res_build.output
     assert "Index Snapshot Committed" in res_build.output
 
+    from raxtik_etl.indexing import IndexManifest
+
+    built_manifest = IndexManifest.load(idx_dir / "manifest.json")
+    assert set(built_manifest.active_snapshot.period_fingerprints.keys()) == {"2004Q1", "2004Q2"}
+
     # 2. `index update` incrementally with 2004Q3
     res_update = runner.invoke(
         app,
@@ -220,7 +225,7 @@ def test_cli_cleanup_bronze_and_upload(tmp_path: Path, monkeypatch: object) -> N
         captured.update(kwargs)
         return "https://huggingface.co/datasets/org/repo/resolve/v0.1.0/silver/index/manifest.json"
 
-    mp.setattr("raxtik_etl.indexing.upload_index_to_hf", _fake_upload)
+    mp.setattr("raxtik_etl.cli.upload_index_to_hf", _fake_upload)
 
     res_upload = runner.invoke(
         app,
